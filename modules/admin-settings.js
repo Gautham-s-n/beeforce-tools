@@ -11,7 +11,7 @@ ctx.defineTool('admin-settings', {
   render: function (body) {
     if (!L.isAdmin()) { body.appendChild(UI.note('bad', 'Admins only', 'Open Admin Settings from the admin console login.')); return; }
     body.appendChild(UI.tabs([
-      { id: 'layout', label: 'Honeycomb', render: layoutTab },
+      { id: 'layout', label: 'Layout', render: layoutTab },
       { id: 'secrets', label: 'Sign-in & audit', render: secretsTab },
       { id: 'endpoints', label: 'API endpoints', render: endpointsTab },
       { id: 'admin', label: 'Admin password', render: function (el) { el.appendChild(h('div.card', ctx.Shell.adminLoginPanel({ change: true }))); } }
@@ -52,15 +52,73 @@ function layoutTab(el) {
   var root = h('div');
   el.appendChild(root);
 
+  var openAreas = {};
+  var query = '';
+  var curMod = (model.modules[0] || {}).id;   // module whose areas are listed
   function dirty() { return JSON.stringify(model) !== saved; }
-  function slug(name) {
-    var b = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'area';
-    var id = b, n = 2; while (model.areas.some(function (a) { return a.id === id; })) id = b + '-' + n++;
+  function slug(name, list) {
+    list = list || model.areas;
+    var b = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'item';
+    var id = b, n = 2; while (list.some(function (a) { return a.id === id; })) id = b + '-' + n++;
     return id;
   }
+  function modName(id) { return (model.modules.filter(function (m) { return m.id === id; })[0] || {}).name || id; }
+  // Move an area up/down among the areas of its own module.
+  function moveArea(a, d) {
+    var same = model.areas.filter(function (x) { return x.module === a.module; });
+    var j = same.indexOf(a) + d; if (j < 0 || j >= same.length) return;
+    var i1 = model.areas.indexOf(a), i2 = model.areas.indexOf(same[j]);
+    model.areas[i1] = same[j]; model.areas[i2] = a; draw();
+  }
+  function areaMoveBtns(a) {
+    var same = model.areas.filter(function (x) { return x.module === a.module; }), k = same.indexOf(a);
+    return h('span.updn',
+      h('button.iconbtn', { type: 'button', title: 'Move up', disabled: k === 0, onclick: function () { moveArea(a, -1); } }, h('span', '↑')),
+      h('button.iconbtn', { type: 'button', title: 'Move down', disabled: k === same.length - 1, onclick: function () { moveArea(a, 1); } }, h('span', '↓')));
+  }
+
+  /* Modules: Attendance, Onboarding, Core … each has its own honeycomb. */
+  function modulesCard() {
+    if (!model.modules.some(function (m) { return m.id === curMod; })) curMod = (model.modules[0] || {}).id;
+    var tabs = h('div.modtabs', model.modules.map(function (m) {
+      var n = model.areas.filter(function (a) { return a.module === m.id; }).length;
+      return h('button' + (m.id === curMod ? '.on' : '') + (m.hidden ? '.dim' : ''), { type: 'button', onclick: function () { curMod = m.id; draw(); } },
+        U.icon(m.icon, 16), h('span', m.name || '(no name)'), h('em', String(n)));
+    }), h('button.add', { type: 'button', onclick: addModule }, '+ Module'));
+    var m = model.modules.filter(function (x) { return x.id === curMod; })[0];
+    if (!m) return h('div', tabs);
+    var name = UI.input({ value: m.name }); name.addEventListener('input', function () { m.name = name.value; check(); });
+    var desc = UI.input({ value: m.desc || '', placeholder: 'Short description (module menu)' }); desc.addEventListener('input', function () { m.desc = desc.value; check(); });
+    var icon = UI.select(ICON_CHOICES.map(function (k) { return { value: k, label: k }; }), m.icon); icon.addEventListener('change', function () { m.icon = icon.value; draw(); });
+    var vis = UI.check('Visible', !m.hidden); vis.input.addEventListener('change', function () { m.hidden = !vis.input.checked; draw(); });
+    var k = model.modules.indexOf(m);
+    var isDefault = ctx.DEFAULT_MODULES.some(function (d) { return d.id === m.id; });
+    var empty = !model.areas.some(function (a) { return a.module === m.id; });
+    return h('div.modcard', tabs,
+      h('div.acc-grid', UI.field('Module name', name), UI.field('Icon', icon), UI.field('Order', moveBtns(model.modules, k))),
+      UI.field('Description', desc),
+      h('div.row', { style: { alignItems: 'center' } }, vis, h('span.small.dim', empty ? 'No areas yet — a module shows up once it has a visible area with tools.' : ''), h('span', { style: { flex: 1 } }),
+        !isDefault && empty ? UI.btn('Delete module', { sm: true, kind: 'quiet', icon: 'trash', onClick: function () { model.modules.splice(k, 1); draw(); } }) : null));
+  }
+  async function addModule() {
+    var name = await askName('Add module', 'Module name', 'e.g. Onboarding or Core. Then add areas to it and move tools in.');
+    if (!name) return;
+    var id = slug(name, model.modules);
+    model.modules.push({ id: id, name: name, icon: 'list', desc: '', hidden: false });
+    curMod = id; draw();
+  }
+  function askName(title, label, hint) {
+    return UI.dialog(function (box, close) {
+      var inp = UI.input({ placeholder: label });
+      var f = h('form', h('h2', title), UI.field(label, inp), h('p.muted.small', hint),
+        h('div.acts', h('button.btn.quiet', { type: 'button', onclick: function () { close(null); } }, 'Cancel'), h('button.btn.primary', { type: 'submit' }, 'Add')));
+      f.addEventListener('submit', function (e) { e.preventDefault(); if (inp.value.trim()) close(inp.value.trim()); });
+      box.appendChild(f);
+    });
+  }
   function counts() {
-    var team = ctx.repoLayout ? Object.keys(ctx.repoLayout.areas || {}).length + Object.keys(ctx.repoLayout.tools || {}).length : 0;
-    var loc = L.local(); var mine = loc ? Object.keys(loc.areas || {}).length + Object.keys(loc.tools || {}).length : 0;
+    var n = function (o) { return o ? Object.keys(o.modules || {}).length + Object.keys(o.areas || {}).length + Object.keys(o.tools || {}).length : 0; };
+    var team = n(ctx.repoLayout), mine = n(L.local());
     return { team: team, mine: mine };
   }
 
@@ -91,35 +149,61 @@ function layoutTab(el) {
           UI.btn('Reset this browser', { sm: true, icon: 'retry', kind: 'quiet', onClick: resetLocal }),
           importInput)),
       checkBox,
-      h('div.row', { style: { margin: '6px 0 14px' } }, saveBtn, discardBtn, h('span', { style: { flex: 1 } }),
-        UI.btn('Add area', { icon: 'list', onClick: addArea })),
-      h('div.areagrid', model.areas.map(areaCard)),
+      h('div.row', { style: { margin: '6px 0 14px' } }, saveBtn, discardBtn),
+      modulesCard(),
+      h('div.row', { style: { margin: '14px 0 10px', alignItems: 'center' } }, h('h3.secttl', 'Areas in ' + modName(curMod)), h('span', { style: { flex: 1 } }),
+        UI.btn('Add area', { icon: 'list', sm: true, onClick: addArea })),
+      h('div.row', { style: { margin: '0 0 10px', alignItems: 'center' } }, searchBox(),
+        UI.btn('Expand all', { sm: true, kind: 'quiet', onClick: function () { model.areas.forEach(function (x) { openAreas[x.id] = 1; }); draw(); } }),
+        UI.btn('Collapse all', { sm: true, kind: 'quiet', onClick: function () { openAreas = {}; draw(); } })),
+      h('div.acclist', model.areas.filter(function (a) { return query || a.module === curMod; }).map(function (a) { return areaCard(a, model.areas.indexOf(a)); })),
       unplacedCard());
     check();
   }
 
+  // Collapsible card per area. Open/closed state survives redraws; a search opens every match.
   function areaCard(a, i) {
+    var q = query.trim().toLowerCase();
+    var hit = function (t) { var x = model.tools[t]; return !q || (x.name + ' ' + (x.hint || '') + ' ' + t).toLowerCase().indexOf(q) >= 0; };
+    var areaHit = !q || (a.name + ' ' + (a.desc || '')).toLowerCase().indexOf(q) >= 0;
+    var tools = a.tools.filter(function (t) { return areaHit || hit(t); });
+    if (q && !areaHit && !tools.length) return null;
+    var visibleTools = a.tools.filter(function (t) { return !model.tools[t].hidden; }).length;
+    var over = visibleTools > L.MAX_TOOLS;
+    var isOpen = q ? true : !!openAreas[a.id];
+
     var name = UI.input({ value: a.name });
-    name.addEventListener('input', function () { a.name = name.value; check(); });
+    name.addEventListener('input', function () { a.name = name.value; title.textContent = a.name || '(no name)'; check(); });
     var desc = UI.input({ value: a.desc || '', placeholder: 'Short description (shown on hover)' });
     desc.addEventListener('input', function () { a.desc = desc.value; check(); });
     var icon = UI.select(ICON_CHOICES.map(function (k) { return { value: k, label: k }; }), a.icon);
-    icon.style.maxWidth = '120px';
     icon.addEventListener('change', function () { a.icon = icon.value; draw(); });
     var vis = UI.check('Visible', !a.hidden);
     vis.input.addEventListener('change', function () { a.hidden = !vis.input.checked; draw(); });
     var isDefault = ctx.DEFAULT_AREAS.some(function (d) { return d.id === a.id; });
-    var visibleTools = a.tools.filter(function (t) { return !model.tools[t].hidden; }).length;
-    var card = h('div.card' + (a.hidden ? '.dimcard' : ''), { style: { opacity: a.hidden ? '.65' : '1' } },
-      h('div.row', { style: { alignItems: 'center', marginBottom: '10px' } },
-        h('div.hexico', U.icon(a.icon, 18)), h('div', { style: { flex: 1 } }, name), icon,
-        moveBtns(model.areas, i)),
-      desc,
-      h('div.row', { style: { alignItems: 'center', margin: '8px 0 6px' } }, vis,
-        h('span.small' + (visibleTools > L.MAX_TOOLS ? '.badtxt' : '.dim'), visibleTools + ' of ' + L.MAX_TOOLS + ' ring slots used'),
-        h('span', { style: { flex: 1 } }),
+    var modSel = UI.select(model.modules.map(function (m) { return { value: m.id, label: m.name || m.id }; }), a.module);
+    modSel.addEventListener('change', function () { a.module = modSel.value; curMod = a.module; openAreas[a.id] = 1; draw(); });
+
+    var title = h('b', a.name || '(no name)');
+    var head = h('button.acc-head', { type: 'button', 'aria-expanded': String(isOpen) },
+      h('div.hexico', U.icon(a.icon, 18)),
+      h('div.acc-t', title, h('span.small' + (over ? '.badtxt' : '.dim'), (query ? modName(a.module) + ' · ' : '') + a.tools.length + ' tool' + (a.tools.length === 1 ? '' : 's') + ' · ' + visibleTools + ' of ' + L.MAX_TOOLS + ' ring slots')),
+      a.hidden ? UI.chip('Hidden') : null,
+      U.icon('chev', 18));
+    var body = h('div.acc-body',
+      h('div.acc-grid4', UI.field('Name', name), UI.field('Module', modSel), UI.field('Icon', icon), UI.field('Order', areaMoveBtns(a))),
+      UI.field('Description', desc),
+      h('div.row', { style: { alignItems: 'center', margin: '4px 0 10px' } }, vis, h('span', { style: { flex: 1 } }),
         !isDefault && !a.tools.length ? UI.btn('Delete area', { sm: true, kind: 'quiet', icon: 'trash', onClick: function () { model.areas.splice(i, 1); draw(); } }) : null),
-      a.tools.length ? h('div.tlist', a.tools.map(function (t, j) { return toolRow(a, t, j); })) : h('div.dim.small', 'No tools yet. Place one from “Not in the honeycomb” or move one here.'));
+      tools.length ? h('div.tlist', h('div.trow.thead', h('span'), h('span', 'Tool name'), h('span', 'Hint'), h('span', 'Id'), h('span', 'Move'), h('span')),
+        tools.map(function (t) { return toolRow(a, t, a.tools.indexOf(t)); }))
+        : h('div.dim.small', 'No tools yet. Place one from “Not in the honeycomb” or move one here.'));
+    var card = h('div.acc' + (isOpen ? '.open' : '') + (a.hidden ? '.dim' : '') + (over ? '.over' : ''), head, body);
+    head.addEventListener('click', function () {
+      var o = !card.classList.contains('open');
+      card.classList.toggle('open', o); head.setAttribute('aria-expanded', String(o));
+      if (o) openAreas[a.id] = 1; else delete openAreas[a.id];
+    });
     return card;
   }
 
@@ -127,17 +211,17 @@ function layoutTab(el) {
     var info = model.tools[t];
     var nm = UI.input({ value: info.name }); nm.addEventListener('input', function () { info.name = nm.value; check(); });
     var hint = UI.input({ value: info.hint || '', placeholder: 'Hint' }); hint.addEventListener('input', function () { info.hint = hint.value; check(); });
-    var vis = UI.check('', !info.hidden); vis.title = 'Visible';
-    vis.input.addEventListener('change', function () { info.hidden = !vis.input.checked; draw(); });
-    var mv = UI.select([{ value: '', label: 'Move to…' }].concat(model.areas.filter(function (x) { return x !== a; }).map(function (x) { return { value: x.id, label: x.name + (x.hidden ? ' (hidden)' : '') }; })).concat([{ value: '__out', label: 'Remove from honeycomb' }]), '');
-    mv.style.maxWidth = '150px';
+    var vis = h('input', { type: 'checkbox', checked: !info.hidden, title: 'Visible', 'aria-label': 'Visible' });
+    vis.addEventListener('change', function () { info.hidden = !vis.checked; draw(); });
+    var many = model.modules.length > 1;
+    var mv = UI.select([{ value: '', label: 'Move to…' }].concat(model.areas.filter(function (x) { return x !== a; }).map(function (x) { return { value: x.id, label: (many ? modName(x.module) + ' · ' : '') + x.name + (x.hidden ? ' (hidden)' : '') }; })).concat([{ value: '__out', label: 'Remove from honeycomb' }]), '');
     mv.addEventListener('change', function () {
       if (!mv.value) return;
       a.tools.splice(j, 1);
-      if (mv.value !== '__out') model.areas.filter(function (x) { return x.id === mv.value; })[0].tools.push(t);
+      if (mv.value !== '__out') { var to = model.areas.filter(function (x) { return x.id === mv.value; })[0]; to.tools.push(t); openAreas[mv.value] = 1; }
       draw();
     });
-    return h('div.trow' + (info.hidden ? '.off' : ''), vis, h('div.tf', nm, hint), h('code.dim', t), mv, moveBtns(a.tools, j));
+    return h('div.trow' + (info.hidden ? '.off' : ''), h('label.cbx', vis), nm, hint, h('code.dim', { title: t }, t), mv, moveBtns(a.tools, j));
   }
 
   function moveBtns(list, i) {
@@ -147,29 +231,35 @@ function layoutTab(el) {
       h('button.iconbtn', { type: 'button', title: 'Move down', disabled: i === list.length - 1, onclick: function () { mvTo(1); } }, h('span', '↓')));
   }
 
+  var searchEl;
+  function searchBox() {
+    if (!searchEl) {
+      searchEl = UI.input({ placeholder: 'Find an area or tool' });
+      searchEl.style.maxWidth = '320px';
+      var tm; searchEl.addEventListener('input', function () { clearTimeout(tm); tm = setTimeout(function () { query = searchEl.value; draw(); searchEl.focus(); }, 150); });
+    }
+    return searchEl;
+  }
+
   function unplacedCard() {
     var list = L.unplaced(model);
     if (!list.length) return null;
     return h('div.card', { style: { marginTop: '14px' } },
       h('b', 'Not in the honeycomb'), h('p.muted.small', { style: { margin: '2px 0 10px' } }, 'These tools exist but are not placed in any area, so nobody can open them.'),
       list.map(function (t) {
-        var sel = UI.select([{ value: '', label: 'Place in…' }].concat(model.areas.map(function (x) { return { value: x.id, label: x.name }; })), '');
+        var sel = UI.select([{ value: '', label: 'Place in…' }].concat(model.areas.map(function (x) { return { value: x.id, label: (model.modules.length > 1 ? modName(x.module) + ' · ' : '') + x.name }; })), '');
         sel.style.maxWidth = '200px';
         sel.addEventListener('change', function () { if (!sel.value) return; model.areas.filter(function (x) { return x.id === sel.value; })[0].tools.push(t); draw(); });
-        return h('div.trow', h('div.tf', h('b', model.tools[t].name), h('span.dim.small', model.tools[t].hint)), h('code.dim', t), sel);
+        return h('div.trow.place', h('span'), h('b', model.tools[t].name), h('span.dim.small', model.tools[t].hint), h('code.dim', { title: t }, t), sel, h('span'));
       }));
   }
 
   async function addArea() {
-    var name = await UI.dialog(function (box, close) {
-      var inp = UI.input({ placeholder: 'Area name' });
-      var f = h('form', h('h2', 'Add area'), UI.field('Name', inp), h('p.muted.small', 'Then move tools into it. An empty area is not shown.'),
-        h('div.acts', h('button.btn.quiet', { type: 'button', onclick: function () { close(null); } }, 'Cancel'), h('button.btn.primary', { type: 'submit' }, 'Add')));
-      f.addEventListener('submit', function (e) { e.preventDefault(); if (inp.value.trim()) close(inp.value.trim()); });
-      box.appendChild(f);
-    });
+    var name = await askName('Add area to ' + modName(curMod), 'Area name', 'Then move tools into it. An empty area is not shown.');
     if (!name) return;
-    model.areas.push({ id: slug(name), name: name, icon: 'list', desc: '', hidden: false, tools: [] });
+    var id = slug(name);
+    model.areas.push({ id: id, module: curMod, name: name, icon: 'list', desc: '', hidden: false, tools: [] });
+    openAreas[id] = 1;
     draw();
   }
 
@@ -204,7 +294,7 @@ function layoutTab(el) {
     if (!f) return;
     f.text().then(function (txt) {
       var o; try { o = JSON.parse(txt); } catch (e) { throw new Error('Not valid JSON: ' + e.message); }
-      if (!o || typeof o !== 'object' || (!o.areas && !o.tools)) throw new Error('This is not a layout file (needs "areas" / "tools").');
+      if (!o || typeof o !== 'object' || (!o.areas && !o.tools && !o.modules)) throw new Error('This is not a layout file (needs "modules", "areas" or "tools").');
       model = L.apply(L.defaultsModel(), o);
       draw();
       UI.toast('Loaded ' + f.name + '. Review, then Save to apply it in this browser.');
@@ -216,14 +306,37 @@ function layoutTab(el) {
 
 ctx.addCSS('admin-settings', [
   '.hexico{width:30px;height:34px;clip-path:var(--hex);background:var(--bluebg);display:grid;place-items:center;color:var(--blue3);flex:none}',
-  '.areagrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(560px,1fr));gap:14px;align-items:start}',
+  '.acclist{display:grid;gap:10px}',
+  '.acc{border:1px solid var(--line);border-radius:16px;background:var(--panel);transition:border-color .2s}',
+  '.acc.over{border-color:var(--bad)}.acc.dim .acc-head{opacity:.65}',
+  '.acc-head{width:100%;display:flex;align-items:center;gap:12px;padding:12px 16px;background:none;border:0;text-align:left;border-radius:16px;transition:background .15s}',
+  '.acc-head:hover{background:var(--rowhover)}',
+  '.acc-head>.ic:last-child{color:var(--ink3);transition:transform .25s var(--ease)}',
+  '.acc.open .acc-head>.ic:last-child{transform:rotate(180deg)}',
+  '.acc-t{flex:1;display:flex;flex-direction:column;min-width:0}.acc-t b{font-size:15px}',
+  '.acc-body{display:none;padding:4px 16px 16px;border-top:1px solid var(--line)}',
+  '.acc.open .acc-body{display:block;animation:fadeup .25s var(--ease)}',
+  '.acc-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto;gap:12px;margin-top:12px}',
+  '.acc-grid4{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1.2fr) minmax(0,1fr) auto;gap:12px;margin-top:12px}',
+  '.modcard{border:1px solid var(--line);border-radius:16px;background:var(--panel);padding:14px 16px}',
+  '.modtabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--line)}',
+  '.modtabs button{display:flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;border:1px solid var(--line2);background:var(--well);font-weight:600;font-size:13px;color:var(--ink2);transition:all .15s}',
+  '.modtabs button:hover{color:var(--ink);border-color:var(--blue2)}',
+  '.modtabs button.on{background:var(--bluebg);border-color:var(--blue2);color:var(--ink)}.modtabs button.on .ic{color:var(--blue3)}',
+  '.modtabs button.dim{opacity:.6}.modtabs em{font-style:normal;font-size:11px;color:var(--ink3)}',
+  '.modtabs button.add{border-style:dashed;background:none}',
+  '.secttl{margin:0;font-size:15px}',
   '.tlist{display:grid;gap:6px;margin-top:6px}',
-  '.trow{display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:12px;background:#0C1626}',
+  '.trow{display:grid;grid-template-columns:28px minmax(120px,1fr) minmax(140px,1.3fr) 150px 170px 64px;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--line);border-radius:12px;background:var(--well)}',
+  '.trow.thead{background:none;border:0;padding:0 8px;font-size:12px;color:var(--ink3);font-weight:600}',
+  '.trow.place{grid-template-columns:28px minmax(120px,1fr) minmax(140px,1.3fr) 150px 200px 0}',
   '.trow.off{opacity:.55}',
-  '.trow .tf{flex:1;display:grid;grid-template-columns:minmax(120px,1fr) minmax(120px,1.2fr);gap:6px;min-width:0}',
-  '.trow .input{min-height:34px;padding:6px 9px}',
-  '.trow code{font-size:11px;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+  '.trow .input{min-height:34px;padding:6px 9px;min-width:0}',
+  '.trow select.input{width:100%}',
+  '.trow code{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}',
+  '.trow .cbx{display:grid;place-items:center}.trow .cbx input{width:16px;height:16px;accent-color:var(--blue2)}',
   '.updn{display:inline-flex;gap:2px}.updn .iconbtn{width:28px;height:28px}.updn .iconbtn[disabled]{opacity:.3;cursor:default}',
+  '@media (max-width:1100px){.trow{grid-template-columns:28px 1fr 1fr;}.trow code,.trow.thead span:nth-child(4){display:none}}',
   '.badtxt{color:var(--bad)}'
 ].join('\n'));
 
@@ -305,21 +418,7 @@ var Postman = {
     return { rows: rows, extra: extra, prefixes: Object.keys(prefixes) };
   },
   /* Registry → Postman collection v2.1 (for testing the importer or sharing) */
-  build: function (entries, name) {
-    var byTool = {};
-    entries.forEach(function (e) { (byTool[e.tool] = byTool[e.tool] || []).push(e); });
-    return {
-      info: { name: name || 'BeeForce Tools endpoints', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
-      variable: [{ key: 'baseUrl', value: ctx.Api.state.base || 'https://app.beeforce.in' }],
-      item: Object.keys(byTool).map(function (t) {
-        return { name: (ctx.DEFAULT_TOOLS[t] || {}).name || t, item: byTool[t].map(function (e) {
-          var p = e.path.replace(/\{([a-zA-Z]+)\}/g, ':$1');
-          var q = e.query ? '?' + Object.keys(e.query).map(function (k) { return k + '=' + e.query[k]; }).join('&') : '';
-          return { name: e.label || e.key, request: { method: e.method, header: [], url: { raw: '{{baseUrl}}' + p + q, host: ['{{baseUrl}}'], path: p.replace(/^\//, '').split('/') } } };
-        }) };
-      })
-    };
-  }
+  build: function (entries, name) { return ctx.EP.postman(entries, name); }
 };
 ctx.Postman = Postman;
 
@@ -493,8 +592,8 @@ ctx.addCSS('admin-endpoints', [
   '.eptable .input{min-height:34px;padding:6px 9px;font:12.5px ui-monospace,Consolas,monospace}',
   '.eptable select.input{font:inherit}',
   'tr.grp td{background:var(--panel2);font-weight:700;color:var(--ink);padding:8px 14px}',
-  'tr.badrow td{background:#2A1216}',
-  'tr.badrow:hover td{background:#33161B}',
-  'tr.warnrow td{background:#241F10}',
+  'tr.badrow td{background:var(--badrow)}',
+  'tr.badrow:hover td{background:var(--badrowh)}',
+  'tr.warnrow td{background:var(--warnrow)}',
   'tr.chgrow td:first-child{box-shadow:inset 3px 0 0 var(--blue2)}'
 ].join('\n'));

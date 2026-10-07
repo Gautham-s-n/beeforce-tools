@@ -70,7 +70,7 @@ var Secrets = {
       };
       x.onerror = function () { resolve({ state: 'unconfirmed', msg: 'Sent, but this browser could not read Google\'s reply. Check the Chat space for the test message.' }); };
       x.ontimeout = function () { resolve({ state: 'failed', msg: 'No reply from Google Chat after 10 seconds.' }); };
-      try { x.send(JSON.stringify({ text: '✅ BeeForce Tools audit test from ' + (who || 'setup') + ' on ' + location.host })); }
+      try { x.send(JSON.stringify({ text: '✅ APIary audit test from ' + (who || 'setup') + ' on ' + location.host })); }
       catch (e) { resolve({ state: 'failed', msg: e.message }); }
     });
   }

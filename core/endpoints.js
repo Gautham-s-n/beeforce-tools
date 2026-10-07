@@ -216,6 +216,41 @@ ctx.EP = {
     return ctx.Api.list(fill(e.path, params, key), opts);
   },
   listQuiet: function (key, params, opts) { return this.list(key, params, opts).catch(function () { return []; }); },
+  /* Full URL for display / cURL (no request is made). */
+  url: function (key, params, query) {
+    var e = get(key), q = Object.assign({}, e.query || {}, query || {});
+    var qs = Object.keys(q).filter(function (k) { return q[k] != null && q[k] !== ''; }).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(q[k]); }).join('&');
+    var path = e.path.replace(/\{([a-zA-Z]+)\}/g, function (m, k) { var v = params && params[k]; return v == null || v === '' ? m : encodeURIComponent(String(v)); });
+    return (ctx.Api.state.base || 'https://app.beeforce.in') + path + (qs ? '?' + qs : '');
+  },
+  /* cURL text. The token is a placeholder unless withToken is true (that makes the text a live key). */
+  curl: function (key, params, o) {
+    o = o || {};
+    var e = get(key), sq = function (v) { return "'" + String(v).replace(/'/g, "'\\''") + "'"; };
+    var tok = o.withToken && ctx.Api.state.token ? ctx.Api.state.token : '$BEEFORCE_TOKEN';
+    var lines = ['curl -X ' + e.method + ' ' + sq(this.url(key, params, o.query)),
+      '  -H ' + (o.withToken && ctx.Api.state.token ? sq('Authorization: Bearer ' + tok) : '"Authorization: Bearer $BEEFORCE_TOKEN"'), '  -H ' + sq('Accept: application/json'), '  -H ' + sq('X-Client-Type: Web')];
+    if (e.method !== 'GET' && e.method !== 'DELETE') { lines.push('  -H ' + sq('Content-Type: application/json')); lines.push('  --data ' + sq(o.body ? JSON.stringify(o.body, null, 2) : '{}')); }
+    return lines.join(' \\\n');
+  },
+  /* Postman collection v2.1 for a list of entries (default: all), grouped by tool. */
+  postman: function (entries, name) {
+    entries = entries || this.all();
+    var byTool = {};
+    entries.forEach(function (e) { (byTool[e.tool] = byTool[e.tool] || []).push(e); });
+    return {
+      info: { name: name || 'APIary endpoints', schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json' },
+      variable: [{ key: 'baseUrl', value: ctx.Api.state.base || 'https://app.beeforce.in' }, { key: 'token', value: '' }],
+      auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{token}}', type: 'string' }] },
+      item: Object.keys(byTool).map(function (t) {
+        return { name: (ctx.DEFAULT_TOOLS[t] || {}).name || t, item: byTool[t].map(function (e) {
+          var p = e.path.replace(/\{([a-zA-Z]+)\}/g, ':$1');
+          var q = e.query ? '?' + Object.keys(e.query).map(function (k) { return k + '=' + e.query[k]; }).join('&') : '';
+          return { name: e.label || e.key, request: { method: e.method, header: [{ key: 'X-Client-Type', value: 'Web' }], url: { raw: '{{baseUrl}}' + p + q, host: ['{{baseUrl}}'], path: p.replace(/^\//, '').split('/') } } };
+        }) };
+      })
+    };
+  },
   keys: function () { return Object.keys(DEFAULTS); },
   all: function () { return Object.keys(DEFAULTS).map(get); },
   local: readLocal,

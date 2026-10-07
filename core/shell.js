@@ -24,8 +24,8 @@ ctx.CSS += '\n' + [
   '.cell.mini:hover:not(.gone) .ic{transform:scale(2.5)}',
   '.cell.mini .face{padding:0}',
   '.cell.ghost{cursor:default}.cell.ghost.back{cursor:pointer}',
-  '.cell.ghost:not(.back):hover .rim{background:#1A263B;transform:none}.cell.ghost:not(.back):hover{filter:none}',
-  '.cell.ghost:not(.back):hover .face{background:#0C1526}',
+  '.cell.ghost:not(.back):hover .rim{background:var(--ghostrim);transform:none}.cell.ghost:not(.back):hover{filter:none}',
+  '.cell.ghost:not(.back):hover .face{background:var(--well2)}',
   '.tip{position:absolute;z-index:9;padding:5px 10px;border-radius:8px;background:var(--panel3);border:1px solid var(--line2);font-size:12.5px;font-weight:600;pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s var(--ease);white-space:nowrap}',
   '.tip.on{opacity:1;transform:none}',
   '.areapane{padding-top:300px}',
@@ -33,20 +33,92 @@ ctx.CSS += '\n' + [
   '.loadcard{display:flex;align-items:center;gap:12px;color:var(--ink2)}',
   '.lfoot{margin-top:16px;color:var(--ink3);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}',
   '.lcard.wide{width:min(620px,94vw)}',
+  '.topgap{flex:1}',
+  '.devbtn{display:none!important}.app.admin .devbtn{display:inline-flex!important}',
+  '.menu.right{left:auto;right:0}',
+  '.top .envpill{margin-left:0}',
+  '.modwrap{position:relative}',
+  '.modpill{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);font-weight:700;font-size:13.5px;transition:border-color .15s,background .15s}',
+  '.modpill:hover{border-color:var(--blue2);background:var(--panel2)}.modpill .ic{color:var(--blue3)}',
+  '.menu{position:absolute;top:calc(100% + 8px);left:0;min-width:280px;background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:6px;box-shadow:0 30px 60px -30px var(--shadow);z-index:30;animation:fadeup .18s var(--ease)}',
+  '.menu button{width:100%;display:flex;gap:12px;align-items:flex-start;text-align:left;padding:10px 12px;border:0;background:none;border-radius:10px}',
+  '.menu button:hover,.menu button.on{background:var(--panel3)}.menu button .ic{color:var(--blue3);margin-top:2px}',
+  '.menu b{display:block}.menu span{font-size:12.5px;color:var(--ink2)}',
+  '.viewsw{display:flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}',
+  '.viewsw button{width:32px;height:30px;border:0;border-radius:9px;background:none;color:var(--ink3);display:grid;place-items:center;transition:background .15s,color .15s}',
+  '.viewsw button:hover{color:var(--ink)}.viewsw button[aria-pressed=true]{background:var(--bluebg);color:var(--blue3)}',
+  '.gallery{position:absolute;left:320px;right:0;top:0;bottom:0;overflow:auto;padding:30px 40px 60px;z-index:6;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .3s var(--ease),transform .35s var(--ease)}',
+  '.gallery.on{opacity:1;pointer-events:auto;transform:none}',
+  '.gpage{max-width:1180px}',
+  '.gtitle{display:flex;align-items:baseline;gap:14px;margin-bottom:18px}.gtitle h2{margin:0;font-size:26px;letter-spacing:-.01em}',
+  '.gsec,.ccard{animation:fadeup .35s var(--ease) both}',
+  '.gsec{margin-bottom:26px;border-radius:16px;transition:box-shadow .4s}',
+  '.gsh{display:flex;gap:12px;align-items:center;margin-bottom:12px}.gsh h3{margin:0;font-size:16px}.gsh p{margin:2px 0 0;color:var(--ink2);font-size:12.5px}',
+  '.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}',
+  '.gtile{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--panel);text-align:left;transition:transform .2s var(--ease),border-color .2s,box-shadow .2s}',
+  '.gtile:hover,.gtile:focus-visible{transform:translateY(-3px);border-color:var(--blue2);box-shadow:0 14px 30px -18px var(--cellglow);outline:none}',
+  '.gtile b{font-size:14.5px}.gtile span{font-size:12.5px;color:var(--ink2)}',
+  '.ghex{width:40px;height:46px;clip-path:var(--hex);background:var(--bluebg);display:grid;place-items:center;color:var(--blue3);margin-bottom:4px;transition:transform .25s var(--ease)}',
+  '.gtile:hover .ghex{transform:translateY(-2px) rotate(-6deg)}',
+  '.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;align-items:start}',
+  '.ccard{border:1px solid var(--line);border-radius:18px;background:var(--panel);padding:16px;transition:border-color .2s,box-shadow .4s}',
+  '.ccard:hover{border-color:var(--line2)}',
+  '.clist{display:grid;gap:4px}',
+  '.crow{display:flex;align-items:center;gap:12px;padding:9px 10px;border:0;border-radius:12px;background:none;text-align:left;transition:background .15s}',
+  '.crow:hover,.crow:focus-visible{background:var(--rowhover);outline:none}.crow div{flex:1;display:flex;flex-direction:column}.crow b{font-size:14px}.crow div span{font-size:12px;color:var(--ink2)}',
+  '.crow>.ic:last-child{transform:rotate(180deg);color:var(--ink3);opacity:0;transition:opacity .15s,transform .2s}.crow:hover>.ic:last-child{opacity:1;transform:rotate(180deg) translateX(-3px)}',
+  '.cic{width:30px;height:34px;clip-path:var(--hex);background:var(--toolface);display:grid;place-items:center;color:var(--blue3);flex:none}',
+  '.lwrap{border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden}',
+  '.lsec{border-radius:0;transition:box-shadow .4s}',
+  '.lsh{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--panel2);border-bottom:1px solid var(--line);color:var(--blue3)}.lsh b{color:var(--ink)}.lsh>span:last-child{margin-left:auto;font-size:12px;color:var(--ink3)}',
+  '.hexico{width:30px;height:34px;clip-path:var(--hex);background:var(--bluebg);display:grid;place-items:center;color:var(--blue3);flex:none}',
+  '.lrow{width:100%;display:grid;grid-template-columns:34px minmax(160px,1fr) minmax(200px,2fr);align-items:center;gap:10px;padding:8px 16px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;transition:background .12s}',
+  '.lrow:hover,.lrow:focus-visible{background:var(--rowhover);outline:none}.lrow .hint{color:var(--ink2);font-size:13px}.lrow .ar{color:var(--ink3);font-size:12px;text-align:right}',
+  '.flash{box-shadow:0 0 0 2px var(--blue2)}',
   '.envpill.adm i{background:var(--honey);box-shadow:0 0 10px var(--honey)}',
   'pre.code{white-space:pre-wrap;word-break:break-all}',
   '.login{overflow:auto;padding:24px 0}',
   '.lcard code,.page code{font:12px ui-monospace,Consolas,monospace;color:var(--ink2);word-break:break-all}'
 ].join('\n');
 
-var S = { level: 'login', area: null, tool: null };
+var VIEWS = [['honeycomb', 'hexgrid', 'Honeycomb'], ['gallery', 'cards', 'Gallery'], ['cards', 'layers', 'Cards'], ['list', 'list', 'List']];
+var S = { level: 'login', area: null, tool: null, module: null, view: 'honeycomb' };
 var R = {};            // element refs
 var cells = {};        // id -> cell element
 var views = {};        // tool id -> workspace element (kept so work in progress survives navigation)
 
-function areaOf(toolId) { return AREAS.filter(function (a) { return (a.allTools || a.tools).indexOf(toolId) >= 0; })[0]; }
+// areaOf looks across all modules; areaById only in the current module (what the honeycomb shows).
+function areaOf(toolId) { return (ctx.AREAS || []).filter(function (a) { return (a.allTools || a.tools).indexOf(toolId) >= 0; })[0]; }
+function anyAreaById(id) { return (ctx.AREAS || []).filter(function (a) { return a.id === id; })[0]; }
+function moduleById(id) { return (ctx.MODULES || []).filter(function (m) { return m.id === id; })[0]; }
+/* Current module's areas (+ the admin Settings area, which belongs to every module). */
+function scope() {
+  var mods = ctx.MODULES || [];
+  if (!mods.some(function (m) { return m.id === S.module; })) {
+    var saved = U.store.get('module', '');
+    S.module = (mods.filter(function (m) { return m.id === saved; })[0] || mods[0] || {}).id || null;
+  }
+  AREAS = ctx.AREAS.filter(function (a) { return !S.module || a.module === S.module || a.module === '*'; });
+  var v = U.store.get('view', 'honeycomb');
+  S.view = VIEWS.some(function (x) { return x[0] === v; }) ? v : 'honeycomb';
+}
 function areaById(id) { return AREAS.filter(function (a) { return a.id === id; })[0]; }
 function initials(n) { n = String(n || '?').replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean); return ((n[0] || '?')[0] + ((n[1] || '')[0] || '')).toUpperCase(); }
+
+/* ---------------- theme (dark / light / system, remembered per browser) ---------------- */
+var Theme = {
+  pref: function () { var v = U.store.get('theme', 'dark'); return ['dark', 'light', 'system'].indexOf(v) >= 0 ? v : 'dark'; },
+  resolved: function () { var p = this.pref(); return p === 'system' ? (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : p; },
+  apply: function () {
+    if (!ctx.appEl) return;
+    ctx.appEl.setAttribute('data-theme', this.resolved());
+    Array.prototype.forEach.call(ctx.root.querySelectorAll('.themebtn'), function (b) { Theme.paint(b); });
+  },
+  next: function () { var order = ['dark', 'light', 'system']; U.store.set('theme', order[(order.indexOf(this.pref()) + 1) % 3]); this.apply(); UI.toast({ dark: 'Dark mode', light: 'Light mode', system: 'Follows your system setting' }[this.pref()]); },
+  paint: function (b) { var p = this.pref(); U.swap(b, U.icon(p === 'dark' ? 'moon' : p === 'light' ? 'sun' : 'monitor', 18)); b.title = 'Theme: ' + p + ' (click to change)'; b.setAttribute('aria-label', b.title); },
+  button: function () { var b = h('button.iconbtn.themebtn', { type: 'button', onclick: function () { Theme.next(); } }); this.paint(b); return b; }
+};
+if (window.matchMedia) try { matchMedia('(prefers-color-scheme: light)').addEventListener('change', function () { if (Theme.pref() === 'system') Theme.apply(); }); } catch (e) {}
 
 /* ---------------- mount ---------------- */
 function mount() {
@@ -61,6 +133,7 @@ function mount() {
   var app = h('div.app');
   root.appendChild(app);
   ctx.host = host; ctx.root = root; ctx.appEl = app;
+  Theme.apply();
   R.toasts = h('div.toasts');
   app.appendChild(R.toasts);
   requestAnimationFrame(function () { app.classList.add('in'); });
@@ -100,7 +173,7 @@ function showLogin(msg, forceSetup) {
   var go = h('button.btn.primary', { type: 'submit', style: { width: '100%', marginTop: '4px' } }, h('span', 'Sign in'));
 
   var form = h('form', { novalidate: true },
-    h('div.brand', h('div.mark'), 'BeeForce Tools'),
+    h('div.brand', h('div.mark'), 'APIary'),
     h('h2', 'Sign in'),
     h('p.muted', { style: { margin: 0 } }, 'Use your Beeforce admin account. Pick where the changes should go.'),
     h('div.seg', segP, segU),
@@ -122,7 +195,7 @@ function showLogin(msg, forceSetup) {
       if (adm === 'ok') {
         pass.value = '';
         ctx.adminConsole = true;
-        Api.state.user = 'Admin console'; Api.state.env = null; Api.state.token = null;
+        Api.state.user = ctx.AdminLogin.username() || 'admin'; Api.state.env = null; Api.state.token = null;
         ctx.Audit.startSession('Admin console', 'Admin console (' + location.host + ')');
         R.login.style.transition = 'opacity .35s var(--ease), transform .45s var(--ease)';
         R.login.style.opacity = '0'; R.login.style.transform = 'scale(.98)';
@@ -142,7 +215,8 @@ function showLogin(msg, forceSetup) {
       form.animate && !U.reducedMotion() && form.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 260 });
     }
   });
-  var close = h('button.iconbtn', { type: 'button', title: 'Close', style: { position: 'absolute', right: '20px', top: '18px' }, onclick: hide }, U.icon('x', 18));
+  var close = h('div', { style: { position: 'absolute', right: '20px', top: '18px', display: 'flex', gap: '6px' } }, Theme.button(),
+    h('button.iconbtn', { type: 'button', title: 'Close', onclick: hide }, U.icon('x', 18)));
   var card = h('div.lcard', form);
   R.login = h('div.login', deco, card, close);
   app.insertBefore(R.login, R.toasts);
@@ -205,9 +279,9 @@ function secretsPanel(o) {
   [cid, sec, hook].forEach(function (i) { i.addEventListener('input', function () { err.textContent = ''; }); });
   var save = h('button.btn.primary', { type: 'submit' }, h('span', o.first ? 'Save and continue' : 'Save'));
   var form = h('form', { novalidate: true },
-    o.inSettings ? null : h('div.brand', h('div.mark'), 'BeeForce Tools'),
+    o.inSettings ? null : h('div.brand', h('div.mark'), 'APIary'),
     o.inSettings ? null : h('h2', o.first ? 'Set up this browser' : 'Sign-in & audit setup'),
-    o.inSettings ? null : h('p.muted', { style: { margin: '0 0 14px' } }, o.first ? 'One-time setup for ' + location.host + '. Ask your BeeForce Tools admin for these values.' : 'Settings saved in this browser for ' + location.host + '.'),
+    o.inSettings ? null : h('p.muted', { style: { margin: '0 0 14px' } }, o.first ? 'One-time setup for ' + location.host + '. Ask your APIary admin for these values.' : 'Settings saved in this browser for ' + location.host + '.'),
     h('div.label', { style: { marginTop: 0 } }, 'Sign-in client'),
     h('div.grid2', UI.field('Client id', cid), UI.field('Client secret', h('div.pw', sec, eye))),
     h('div.label', 'Audit webhook (optional)'),
@@ -246,16 +320,21 @@ function buildMain(fromLogin) {
   cells = {};
   views = {};
   ctx.Layout.build();
-  AREAS = ctx.AREAS; TOOLS = ctx.TOOLS;
+  TOOLS = ctx.TOOLS;
+  scope();
 
   var st = Api.state;
   R.crumb = h('div.crumb');
   R.env = ctx.adminConsole ? h('div.envpill.adm', h('i'), 'Admin console') : h('div.envpill' + (st.env === 'uat' ? '.uat' : ''), h('i'), Api.envLabel());
-  var who = h('button.who', { type: 'button', title: 'Signed in as ' + st.user + ' · click to sign out', onclick: signOutAsk }, h('div.av', initials(st.user)), h('span', st.user));
+  var who = h('button.who', { type: 'button', title: 'Signed in as ' + st.user, 'aria-haspopup': 'menu', onclick: function (e) { e.stopPropagation(); userMenu(whoWrap); } }, h('div.av', initials(st.user)), h('span', st.user));
+  var whoWrap = h('div.modwrap', who);
+  R.modPill = h('div.modwrap');
+  R.viewSw = h('div.viewsw', { role: 'group', 'aria-label': 'View' });
   var top = h('div.top',
-    h('div.brand', h('div.mark'), 'BeeForce Tools'),
-    R.crumb, R.env, who,
+    h('div.brand', h('div.mark'), 'APIary'),
+    R.modPill, R.crumb, h('span.topgap'), R.viewSw, R.env, whoWrap,
     h('button.iconbtn', { type: 'button', title: 'Search tools (Ctrl K)', 'aria-label': 'Search tools', onclick: openPalette }, U.icon('search', 18)),
+    Theme.button(),
     h('button.iconbtn', { type: 'button', title: 'Close (session stays signed in)', 'aria-label': 'Close', onclick: hide }, U.icon('x', 18)));
 
   R.homePane = h('div.sidepane');
@@ -266,11 +345,13 @@ function buildMain(fromLogin) {
   R.peek = h('div.peek');
   R.tip = h('div.tip');
   R.work = h('div.work');
-  R.body = h('div.body', R.side, R.stage, R.peek, R.tip, R.work);
+  R.gallery = h('div.gallery');
+  R.body = h('div.body', R.side, R.stage, R.gallery, R.peek, R.tip, R.work);
   app.insertBefore(top, R.toasts);
   app.insertBefore(R.body, R.toasts);
 
   buildCells();
+  drawModulePill(); drawViewSwitch(); markAdmin();
   drawHomePane();
   S.level = 'home'; S.area = null; S.tool = null;
 
@@ -314,7 +395,7 @@ function buildCells() {
 
     a.tools.forEach(function (t) {
       var info = TOOLS[t];
-      var tc = mkCell('t:' + t, 'tool', [U.icon(a.icon, 24), h('div.nm', info.name), h('div.ht', info.hint)], function () {
+      var tc = mkCell('t:' + t, 'tool', [U.icon(info.icon || a.icon, 24), h('div.nm', info.name), h('div.ht', info.hint)], function () {
         if (S.level === 'tool' && S.tool === t) return;
         go('tool', a.id, t);
       }, info.name);
@@ -346,6 +427,11 @@ function computeLayout(opts) {
   var L = {};
   var hubAt;
 
+  if ((S.level === 'home' || opts.intro) && S.view !== 'honeycomb') {
+    // Gallery / cards / list views: the honeycomb waits, gathered and invisible, at the centre.
+    Object.keys(cells).forEach(function (id) { L[id] = place(id, cx, cy, 30, 0); L[id].gone = 1; });
+    return L;
+  }
   if (S.level === 'home' || opts.intro) {
     var k = Math.min(1, (W - SIDE - 60) / 790, (H - 40) / 570);
     var w = 170 * k, gap = 10 * k;
@@ -400,8 +486,11 @@ function computeLayout(opts) {
   // tool level: trail
   var tx = 70, ty = 72, step = 106, tw = 64;
   L.hub = place('hub', tx, ty, tw); L.hub.mini = 1;
-  L['a:' + area.id] = place('a:' + area.id, tx, ty + step, tw); L['a:' + area.id].mini = 1; L['a:' + area.id].sel = 1; L['a:' + area.id].d = 40;
-  L['t:' + S.tool] = place('t:' + S.tool, tx, ty + step * 2, tw); L['t:' + S.tool].mini = 1; L['t:' + S.tool].cur = 1; L['t:' + S.tool].d = 80;
+  // A one-tool system area (Settings) has no step of its own: Home → tool.
+  var skip = skipArea(area);
+  if (skip) { L['a:' + area.id] = place('a:' + area.id, tx, ty, 20, 0); L['a:' + area.id].gone = 1; }
+  else { L['a:' + area.id] = place('a:' + area.id, tx, ty + step, tw); L['a:' + area.id].mini = 1; L['a:' + area.id].sel = 1; L['a:' + area.id].d = 40; }
+  L['t:' + S.tool] = place('t:' + S.tool, tx, ty + step * (skip ? 1 : 2), tw); L['t:' + S.tool].mini = 1; L['t:' + S.tool].cur = 1; L['t:' + S.tool].d = 80;
   AREAS.forEach(function (a) {
     if (a.id !== area.id) { L['a:' + a.id] = place('a:' + a.id, tx, ty + step, 20, 0); L['a:' + a.id].gone = 1; }
     a.tools.forEach(function (t) {
@@ -435,9 +524,15 @@ function layout(opts) {
 
 /* ---------------- navigation ---------------- */
 function go(level, areaId, toolId) {
-  hidePeek(); hideTip();
+  hidePeek(); hideTip(); closeMenus();
   var prev = S.level;
   if (level === 'tool' && !areaId) areaId = areaOf(toolId).id;
+  // A tool or area in another module: switch module first.
+  var tgt = areaId ? anyAreaById(areaId) : null;
+  if (tgt && tgt.module !== '*' && S.module && tgt.module !== S.module) { switchModule(tgt.module, true); prev = 'home'; }
+  // Outside the honeycomb view there is no area level: show the module page and point at the area.
+  var focusArea = null;
+  if (level === 'area' && S.view !== 'honeycomb') { focusArea = areaId; level = 'home'; areaId = null; }
   // tools bloom from the centre of their area when entering an area from home
   if (level === 'area' && (prev === 'home' || S.area !== areaId)) {
     var a = areaById(areaId);
@@ -463,6 +558,138 @@ function go(level, areaId, toolId) {
   if (level === 'tool') { drawToolPane(); openTool(toolId); }
   else R.work.classList.remove('on');
   if (level === 'home') drawHomePane();
+  var flat = level === 'home' && S.view !== 'honeycomb';
+  if (flat) drawGallery(focusArea);
+  R.gallery.classList.toggle('on', flat);
+}
+
+/* ---------------- modules ---------------- */
+function switchModule(id, silent) {
+  if (!id || id === S.module) return;
+  S.module = id; U.store.set('module', id);
+  scope();
+  rebuildCells();
+  layout({ intro: true, instant: true });
+  drawModulePill();
+  if (!silent) go('home');
+}
+function rebuildCells() {
+  Array.prototype.slice.call(R.stage.querySelectorAll('.cell')).forEach(function (c) { c.remove(); });
+  cells = {};
+  buildCells();
+}
+function closeMenus() { if (R.menu) { R.menu.remove(); R.menu = null; } }
+
+/* User menu: admin unlock (inside a Beeforce session) and sign out. */
+function userMenu(anchor) {
+  if (R.menu) return closeMenus();
+  var items = [];
+  if (!ctx.adminConsole && ctx.AdminLogin.configured()) {
+    items.push(ctx.adminUnlocked
+      ? h('button', { type: 'button', onclick: function () { closeMenus(); lockAdmin(); } }, U.icon('key', 18), h('div', h('b', 'Lock admin tools'), h('span', 'Hide Settings and Developer panels')))
+      : h('button', { type: 'button', onclick: function () { closeMenus(); unlockAdmin(); } }, U.icon('unlock', 18), h('div', h('b', 'Unlock admin tools'), h('span', 'Settings and Developer panels for this session'))));
+  }
+  items.push(h('button', { type: 'button', onclick: function () { closeMenus(); signOutAsk(); } }, U.icon('out', 18), h('div', h('b', 'Sign out'), h('span', ctx.adminConsole ? 'Leave the admin console' : 'Signed in as ' + Api.state.user))));
+  R.menu = h('div.menu.right', { role: 'menu' }, items);
+  anchor.appendChild(R.menu);
+}
+function unlockAdmin() {
+  return UI.dialog(function (box, close) {
+    var pass = UI.input({ type: 'password', placeholder: 'Admin password' }); pass.autocomplete = 'current-password';
+    var err = h('div.err');
+    var f = h('form', h('h2', 'Unlock admin tools'), h('p.muted', 'Enter the password of ' + ctx.AdminLogin.username() + '. Admin tools stay unlocked until you sign out or close this tab.'), UI.field('Password', pass), err,
+      h('div.acts', h('button.btn.quiet', { type: 'button', onclick: function () { close(false); } }, 'Cancel'), h('button.btn.primary', { type: 'submit' }, 'Unlock')));
+    f.addEventListener('submit', async function (e) {
+      e.preventDefault(); err.textContent = '';
+      var r = await ctx.AdminLogin.check(ctx.AdminLogin.username(), pass.value);
+      pass.value = '';
+      if (r !== 'ok') { err.textContent = 'Wrong admin password.'; return; }
+      ctx.adminUnlocked = true;
+      try { sessionStorage.setItem('bft.adminUnlock', '1'); } catch (x) {}
+      close(true); relayout(); markAdmin(); UI.toast('Admin tools unlocked: Settings area and Developer panels.');
+    });
+    box.appendChild(f);
+  });
+}
+function lockAdmin() {
+  ctx.adminUnlocked = false;
+  try { sessionStorage.removeItem('bft.adminUnlock'); } catch (x) {}
+  if (S.tool === 'admin-settings') go('home');
+  relayout(); markAdmin(); UI.toast('Admin tools locked.');
+}
+function drawModulePill() {
+  if (!R.modPill) return;
+  var mods = ctx.MODULES || [];
+  var m = moduleById(S.module);
+  if (!m) { U.clear(R.modPill); return; }
+  var many = mods.length > 1;
+  var btn = h('button.modpill', { type: 'button', title: many ? 'Switch module' : m.name, 'aria-haspopup': many ? 'menu' : null },
+    U.icon(m.icon, 16), h('span', m.name), many ? U.icon('chev', 14) : null);
+  if (many) btn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (R.menu) return closeMenus();
+    R.menu = h('div.menu', { role: 'menu' }, mods.map(function (x) {
+      return h('button' + (x.id === S.module ? '.on' : ''), { type: 'button', role: 'menuitem', onclick: function () { closeMenus(); switchModule(x.id); } },
+        U.icon(x.icon, 18), h('div', h('b', x.name), x.desc ? h('span', x.desc) : null));
+    }));
+    R.modPill.appendChild(R.menu);
+  });
+  U.swap(R.modPill, btn);
+}
+
+/* ---------------- views: honeycomb / gallery / cards / list (remembered per browser) ---------------- */
+function drawViewSwitch() {
+  if (!R.viewSw) return;
+  R.viewSw.style.display = ctx.adminConsole ? 'none' : '';
+  U.swap(R.viewSw, VIEWS.map(function (v) {
+    return h('button', { type: 'button', title: v[2] + ' view', 'aria-label': v[2] + ' view', 'aria-pressed': S.view === v[0] ? 'true' : 'false', onclick: function () { setView(v[0]); } }, U.icon(v[1], 17));
+  }));
+}
+function setView(v) {
+  if (S.view === v) return;
+  S.view = v; U.store.set('view', v);
+  drawViewSwitch();
+  if (S.level === 'area' || S.level === 'home') go('home');
+}
+function toolTile(a, t, kind) {
+  var info = TOOLS[t];
+  var open = function () { go('tool', a.id, t); };
+  if (kind === 'gallery') return h('button.gtile', { type: 'button', onclick: open, title: info.hint },
+    h('div.ghex', U.icon(info.icon || a.icon, 22)), h('b', info.name), h('span', info.hint));
+  if (kind === 'cards') return h('button.crow', { type: 'button', onclick: open },
+    h('span.cic', U.icon(info.icon || a.icon, 17)), h('div', h('b', info.name), h('span', info.hint)), U.icon('back', 14));
+  return h('button.lrow', { type: 'button', onclick: open },
+    h('span.cic', U.icon(info.icon || a.icon, 16)), h('b', info.name), h('span.hint', info.hint));
+}
+function drawGallery(focusArea) {
+  var kind = S.view;
+  var list = AREAS.filter(function (a) { return a.tools.length; });
+  var body;
+  if (kind === 'gallery') {
+    body = list.map(function (a, i) {
+      return h('section.gsec', { 'data-area': a.id, style: { animationDelay: (i * 40) + 'ms' } },
+        h('div.gsh', h('div.hexico', U.icon(a.icon, 18)), h('div', h('h3', a.name), h('p', a.desc))),
+        h('div.ggrid', a.tools.map(function (t) { return toolTile(a, t, 'gallery'); })));
+    });
+  } else if (kind === 'cards') {
+    body = h('div.cgrid', list.map(function (a, i) {
+      return h('section.ccard', { 'data-area': a.id, style: { animationDelay: (i * 40) + 'ms' } },
+        h('div.gsh', h('div.hexico', U.icon(a.icon, 18)), h('div', h('h3', a.name), h('p', a.desc))),
+        h('div.clist', a.tools.map(function (t) { return toolTile(a, t, 'cards'); })));
+    }));
+  } else {
+    body = h('div.lwrap', list.map(function (a) {
+      return h('section.lsec', { 'data-area': a.id }, h('div.lsh', U.icon(a.icon, 16), h('b', a.name), h('span', a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools'))),
+        a.tools.map(function (t) { return toolTile(a, t, 'list'); }));
+    }));
+  }
+  var m = moduleById(S.module);
+  U.swap(R.gallery, h('div.gpage', h('div.gtitle', h('h2', m ? m.name : 'Tools'), h('span.muted', AREAS.reduce(function (n, a) { return n + a.tools.length; }, 0) + ' tools · ' + list.length + ' areas')), body));
+  R.gallery.scrollTop = 0;
+  if (focusArea) {
+    var el = R.gallery.querySelector('[data-area="' + focusArea + '"]');
+    if (el) { el.scrollIntoView({ block: 'start' }); el.classList.add('flash'); setTimeout(function () { el.classList.remove('flash'); }, 1200); }
+  }
 }
 
 function back() {
@@ -472,7 +699,7 @@ function back() {
 
 function drawCrumb() {
   var parts = [h('button', { type: 'button', onclick: function () { go('home'); } }, 'Home')];
-  if (S.area) { var a = areaById(S.area); parts.push(h('i', '›')); parts.push(S.level === 'area' ? h('b', a.name) : h('button', { type: 'button', onclick: function () { go('area', a.id); } }, a.name)); }
+  if (S.area && !(S.level === 'tool' && skipArea(areaById(S.area)))) { var a = areaById(S.area); parts.push(h('i', '›')); parts.push(S.level === 'area' ? h('b', a.name) : h('button', { type: 'button', onclick: function () { go('area', a.id); } }, a.name)); }
   if (S.tool) { parts.push(h('i', '›')); parts.push(h('b', TOOLS[S.tool].name)); }
   U.swap(R.crumb, parts);
 }
@@ -485,8 +712,8 @@ function drawHomePane() {
   var rec = recentList();
   var runs = U.store.get('runs', []).slice(0, 4);
   U.swap(R.homePane,
-    h('h1', 'Configuration'),
-    h('p', 'Pick an area, then a tool. Every change is shown for review before it is written to ' + Api.envLabel() + '.'),
+    h('h1', (moduleById(S.module) || {}).name || 'Configuration'),
+    h('p', 'Pick ' + (S.view === 'honeycomb' ? 'an area, then a tool' : 'a tool') + '. Every change is shown for review before it is written to ' + (Api.envLabel() || 'Beeforce') + '.'),
     h('button.searchbtn', { type: 'button', onclick: openPalette }, U.icon('search', 18), 'Find a tool', h('kbd', 'Ctrl K')),
     ctx.Secrets.auditState() === 'configured' ? null : h('div', { style: { marginTop: '12px' } }, auditBadge(),
       h('div.small.dim', { style: { marginTop: '4px' } }, ctx.Secrets.auditState() === 'not-configured' ? 'Audit events will not be sent from this browser.' : ctx.Secrets.auditState() === 'failed' ? 'The last webhook test failed. Audit may not be delivered.' : 'Webhook saved, delivery not confirmed.')),
@@ -514,18 +741,20 @@ function drawAreaPane() {
     h('button.linkbtn', { type: 'button', onclick: function () { go('home'); } }, '← All areas'));
 }
 
+function skipArea(a) { return !!(a && a.system && a.tools.length === 1); }
 function drawToolPane() {
   var a = areaById(S.area);
   var tx = 70, ty = 72, step = 106;
-  var labels = [['Home', 'home'], [a.name, 'area'], [TOOLS[S.tool].name, 'tool']].map(function (l, i) {
-    var el = h('div.tl' + (i === 2 ? '.cur' : ''), l[0]);
+  var steps = skipArea(a) ? [['Home', 'home'], [TOOLS[S.tool].name, 'tool']] : [['Home', 'home'], [a.name, 'area'], [TOOLS[S.tool].name, 'tool']];
+  var labels = steps.map(function (l, i) {
+    var el = h('div.tl' + (i === steps.length - 1 ? '.cur' : ''), l[0]);
     el.style.left = (tx + 46) + 'px'; el.style.top = (ty + step * i) + 'px';
     el.style.transition = 'opacity .3s var(--ease) ' + (120 + i * 60) + 'ms, transform .4s var(--ease) ' + (120 + i * 60) + 'ms';
     el.style.opacity = '0'; el.style.transform = 'translate(-8px,-50%)';
     requestAnimationFrame(function () { requestAnimationFrame(function () { el.style.opacity = '1'; el.style.transform = 'translate(0,-50%)'; }); });
     return el;
   });
-  var lines = [0, 1].map(function (i) { var ln = h('div.ln'); ln.style.top = (ty + step * i + 37) + 'px'; ln.style.height = (step - 74) + 'px'; return ln; });
+  var lines = steps.slice(1).map(function (x, i) { var ln = h('div.ln'); ln.style.top = (ty + step * i + 37) + 'px'; ln.style.height = (step - 74) + 'px'; return ln; });
   var trail = h('div.trail', lines, labels);
   trail.style.position = 'absolute'; trail.style.left = '0'; trail.style.top = '0'; trail.style.width = '100%';
   var sibs = a.tools.filter(function (t) { return t !== S.tool; });
@@ -559,7 +788,9 @@ function openTool(id) {
   show(page);
   ctx.loadTool(id).then(function (def) {
     U.clear(page);
-    page.appendChild(UI.header({ area: a.name, title: TOOLS[id].name, desc: def.desc || TOOLS[id].hint, actions: def.actions }));
+    var devBtn = id === 'admin-settings' || id === 'api-automation' ? null : UI.btn('Developer', { kind: 'quiet', icon: 'code', onClick: function () { return openDev(id); } });
+    if (devBtn) devBtn.classList.add('devbtn');
+    page.appendChild(UI.header({ area: a.name, title: TOOLS[id].name, desc: def.desc || TOOLS[id].hint, actions: [].concat(def.actions || [], devBtn ? [devBtn] : []) }));
     var body = h('div');
     page.appendChild(body);
     return def.render(body, { id: id, name: TOOLS[id].name, area: a });
@@ -570,6 +801,9 @@ function openTool(id) {
       UI.btn('Try again', { icon: 'retry', onClick: function () { page.remove(); openTool(id); } }));
   });
 }
+
+function openDev(id) { return ctx.loadTool('dev-panel').then(function (d) { d.open(id); }); }
+function markAdmin() { if (ctx.appEl) ctx.appEl.classList.toggle('admin', ctx.Layout.isAdmin()); }
 
 /* ---------------- hover peek + tips ---------------- */
 function showPeek(a, cell) {
@@ -596,13 +830,14 @@ function openPalette() {
   if (S.level === 'login' || R.pal) return;
   var all = [];
   var admin = ctx.Layout.isAdmin();
-  AREAS.forEach(function (a) { (a.allTools || a.tools).forEach(function (t) { if (TOOLS[t] && (!TOOLS[t].hidden || admin)) all.push({ t: t, a: a, name: TOOLS[t].name, hint: TOOLS[t].hint + (TOOLS[t].hidden ? ' · hidden' : '') }); }); });
+  var manyMods = (ctx.MODULES || []).length > 1;
+  ctx.AREAS.forEach(function (a) { (a.allTools || a.tools).forEach(function (t) { if (TOOLS[t] && (!TOOLS[t].hidden || admin)) all.push({ t: t, a: a, name: TOOLS[t].name, hint: TOOLS[t].hint + (TOOLS[t].hidden ? ' · hidden' : ''), where: (manyMods && moduleById(a.module) ? moduleById(a.module).name + ' · ' : '') + a.name }); }); });
   var q = UI.input({ placeholder: 'Search tools — e.g. "accrual set", "punch"' });
   var ul = h('ul', { role: 'listbox' });
   var cur = 0, shown = [];
   function draw() {
     var words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
-    shown = all.filter(function (x) { var s = (x.name + ' ' + x.hint + ' ' + x.a.name + ' ' + x.t).toLowerCase(); return words.every(function (w) { return s.indexOf(w) >= 0; }); });
+    shown = all.filter(function (x) { var s = (x.name + ' ' + x.hint + ' ' + x.where + ' ' + x.t).toLowerCase(); return words.every(function (w) { return s.indexOf(w) >= 0; }); });
     if (words.length) {
       var score = function (x) { var n = x.name.toLowerCase(), qq = words.join(' '); return n === qq ? 0 : n.indexOf(qq) === 0 ? 1 : n.indexOf(qq) >= 0 ? 2 : words.every(function (w) { return n.indexOf(w) >= 0; }) ? 3 : 4; };
       shown.sort(function (x, y) { return score(x) - score(y); });
@@ -611,7 +846,7 @@ function openPalette() {
     cur = Math.min(cur, Math.max(0, shown.length - 1));
     U.swap(ul, shown.length ? shown.map(function (x, i) {
       return h('li', h('button', { type: 'button', role: 'option', 'aria-selected': i === cur ? 'true' : 'false', onclick: function () { pick(x); }, onmouseenter: function () { cur = i; mark(); } },
-        U.icon(x.a.icon, 18), h('b', x.name), h('span', x.hint), h('em', x.a.name)));
+        U.icon((TOOLS[x.t] || {}).icon || x.a.icon, 18), h('b', x.name), h('span', x.hint), h('em', x.where)));
     }) : h('li', h('div.empty', 'No tool matches “' + q.value + '”')));
   }
   function mark() { Array.prototype.forEach.call(ul.querySelectorAll('button'), function (b, i) { b.setAttribute('aria-selected', i === cur ? 'true' : 'false'); if (i === cur) b.scrollIntoView({ block: 'nearest' }); }); }
@@ -624,7 +859,7 @@ function openPalette() {
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
   });
   var pal = h('div.pal', { role: 'dialog', 'aria-label': 'Find a tool' }, h('div.q', U.icon('search', 20), q, h('span.kbd', 'Esc')), ul);
-  var scrim = h('div.scrim', { style: { background: '#050a1288' } });
+  var scrim = h('div.scrim', { style: { background: 'var(--scrim)' } });
   scrim.addEventListener('mousedown', function (e) { if (e.target === scrim) close(); });
   scrim.appendChild(pal);
   ctx.appEl.appendChild(scrim);
@@ -647,7 +882,7 @@ function tickSession() {
     var left = Api.minutesLeft();
     var pct = Math.max(0, Math.min(100, left / ctx.CONFIG.TOKEN_VALIDITY_MIN * 100));
     if (R.ringEl) {
-      R.ringEl.style.background = 'conic-gradient(' + (left <= 10 ? 'var(--bad)' : 'var(--honey)') + ' ' + pct + '%, #2A2512 0)';
+      R.ringEl.style.background = 'conic-gradient(' + (left <= 10 ? 'var(--bad)' : 'var(--honey)') + ' ' + pct + '%, var(--ringtrack) 0)';
       R.ringEl.firstChild.textContent = String(left);
     }
     if (left <= 0) {
@@ -692,7 +927,8 @@ async function signOutAsk() {
   if (!yes) return;
   ctx.Audit.endSession('LOGOUT');
   Api.signOut();
-  ctx.adminConsole = false;
+  ctx.adminConsole = false; ctx.adminUnlocked = false;
+  try { sessionStorage.removeItem('bft.adminUnlock'); } catch (x) {}
   clearInterval(R.timer);
   showLogin();
 }
@@ -708,7 +944,7 @@ function adminLoginPanel(o) {
   var p2 = UI.input({ type: 'password', placeholder: 'Repeat new password' }); p2.autocomplete = 'new-password';
   var err = h('div.err'), out = h('div');
   var form = h('form', { novalidate: true },
-    o.change ? null : h('div.brand', h('div.mark'), 'BeeForce Tools'),
+    o.change ? null : h('div.brand', h('div.mark'), 'APIary'),
     h('h2', change ? 'Change admin password' : 'Create admin password'),
     h('p.muted', { style: { margin: '0 0 12px' } }, (change ? '' : 'No admin password is set yet. ') + 'The admin console opens only the Settings screens and never touches Beeforce. Only a scrambled hash of the password goes into config.js.'),
     UI.kv({ 'Admin username': AL.username() + '  (fixed in config.js)' }),
@@ -746,6 +982,9 @@ function hide() {
 }
 
 /* ---------------- keys + resize ---------------- */
+document.addEventListener('mousedown', function (e) {
+  if (R.menu && ctx.host && e.composedPath && e.composedPath().indexOf(R.menu.parentNode) < 0) closeMenus();
+}, true);
 function onKey(e) {
   if (!ctx.host || !ctx.host.isConnected) return;
   if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); e.stopPropagation(); openPalette(); return; }
@@ -767,6 +1006,7 @@ function start() {
   window.addEventListener('resize', onResize);
   if (Api.restore()) {
     if (!ctx.Audit.active()) ctx.Audit.startSession(Api.state.user, Api.envLabel());
+    try { ctx.adminUnlocked = sessionStorage.getItem('bft.adminUnlock') === '1' && ctx.AdminLogin.configured(); } catch (x) {}
     buildMain(false);
   } else showLogin();
 }
@@ -774,11 +1014,13 @@ function start() {
 /* Rebuild the honeycomb after a layout change, keeping the session and open tool views. */
 function relayout() {
   ctx.Layout.build();
-  AREAS = ctx.AREAS; TOOLS = ctx.TOOLS;
-  Array.prototype.slice.call(R.stage.querySelectorAll('.cell')).forEach(function (c) { c.remove(); });
-  cells = {};
-  buildCells();
+  TOOLS = ctx.TOOLS;
+  scope();
+  rebuildCells();
+  drawModulePill(); drawViewSwitch(); markAdmin();
+  if (S.level === 'home' && S.view !== 'honeycomb') drawGallery();
   if (S.tool && !areaOf(S.tool)) { S.level = 'home'; S.area = null; S.tool = null; }
+  if (S.tool && areaOf(S.tool) && areaOf(S.tool).module !== '*' && areaOf(S.tool).module !== S.module) { S.level = 'home'; S.area = null; S.tool = null; }
   if (S.area && !areaById(S.area)) { S.area = S.tool ? areaOf(S.tool).id : null; if (!S.area) S.level = 'home'; }
   layout({ instant: true });
   drawCrumb();
@@ -786,7 +1028,7 @@ function relayout() {
 }
 
 ctx.Shell = {
-  relayout: relayout,
+  relayout: relayout, switchModule: switchModule, setView: setView,
   start: start, go: go, back: back, hide: hide, openPalette: openPalette, secretsPanel: secretsPanel, auditBadge: auditBadge, adminLoginPanel: adminLoginPanel,
   state: S,
   noteRun: function (module, ok, failed) {

@@ -1,4 +1,4 @@
-# Resume point — BeeForce Tools v3 (updated 2026-10-06, evening)
+# Resume point — APIary (BeeForce Tools v3) (updated 2026-10-06, evening)
 
 ## Done
 - Core (shell, engine, UI kit, Excel, API, audit) and all tools ported (26 tools in 8 areas).
@@ -28,6 +28,16 @@
   Admin console login: fixed username bft.admin in config.js ADMIN_LOGIN + PBKDF2 hash (210k) of the password; opens only
   Settings, no Beeforce call. First login without hash → create-password screen; Admin Settings → Admin password to change.
   Tests: t_layout.py, t_endpoints.py, t_adminlogin.py (rig.py injects a test ADMIN_LOGIN: bt-console / correct horse battery staple).
+
+## v3.1 (2026-10-07 afternoon) — name APIary
+- Phase 1: rename; light/dark/system theme (tokens in styles.js, `.app[data-theme=light]`); per-tool icons; trail Home → tool
+  for one-tool system areas; Admin Settings layout = collapsible accordions + search, fixed row grid.
+- Phase 2: modules (index.js DEFAULT_MODULES, area.module; layout.json v2 with `modules`); top-bar module pill/menu;
+  views honeycomb/gallery/cards/list remembered ('bft.view'); palette across modules (switches module).
+- Phase 3: admin unlock inside a Beeforce session (user menu, sessionStorage 'bft.adminUnlock'); Developer panel
+  (modules/dev-panel.js): endpoints, Send GET + response, copy cURL (token hidden / with token after confirm), Postman.
+- Tests: t_theme, t_views, t_modules, t_dev (+ all older suites pass; tool request logs identical to before).
+- Next (waiting on APIs): no-code components from API details for Onboarding / Core.
 
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).

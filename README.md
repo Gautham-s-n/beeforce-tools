@@ -1,6 +1,6 @@
-# BeeForce Tools v3
+# APIary (v3.1)
 
-A bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
+APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
 
 ## Set up (once)
@@ -38,8 +38,12 @@ Change these later from the sign-in card ("Sign-in & audit setup") or Admin Sett
 
 ## Use
 
-Open app.beeforce.in (or UAT), click the bookmark, sign in, pick an area, then a tool. `Ctrl K` finds any tool,
-`Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute session.
+Open app.beeforce.in (or UAT), click the bookmark, sign in, pick an area, then a tool. `Ctrl K` finds any tool in
+any module, `Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute session.
+
+- **Modules** (top-left pill): Attendance today; Onboarding, Core … appear once they have tools. Each has its own honeycomb.
+- **Views** (top bar): Honeycomb (default), Gallery, Cards, List. The last one you pick is remembered in this browser.
+- **Theme** (moon / sun icon): dark, light, or follow your system. Remembered in this browser.
 
 ## Admin console (Settings)
 
@@ -54,10 +58,16 @@ Normal Beeforce logins never see Settings.
   The old password keeps working until the commit.
 - To rename the admin user, edit `username` in that line (then create a new password, since the hash includes it).
 
+**Inside a normal Beeforce session** an admin can open the user menu (your name, top right) → **Unlock admin tools**
+with the same password. That adds the Settings area and a **Developer** button on every tool: its endpoints, a
+"Send GET" button with the response body, **Copy cURL** (token hidden as `$BEEFORCE_TOKEN`; "cURL with token" asks
+first) and a Postman download. Writes are never sent from the Developer panel. Unlock lasts until sign-out or tab close.
+
 Only a hash of the password is stored. This runs in the browser and config.js is public, so it keeps people out of
 the screens but is not server-grade security; the real lock is who can commit to the GitHub repository.
 
-- **Honeycomb** — rename, reorder, hide or move areas and tools, add areas. Limits: 8 areas, 6 tools per area.
+- **Layout** — modules (add, rename, hide, order), then per module: rename, reorder, hide or move areas and tools,
+  add areas, move areas between modules. Collapsible list with search. Limits: 8 areas per module, 6 tools per area.
   "Save to this browser" changes only your browser. "Export layout.json" gives a file for the whole team.
 - **Sign-in & audit** — client id/secret and audit webhook for this browser; status: configured / not configured / needs attention.
 - **API endpoints** — every Beeforce call the tools make (method + path), editable. "Import Postman collection" (v2.1)
@@ -71,7 +81,7 @@ To change the team default, export the file from Admin Settings and commit it ne
 
 - `loader.js` → `index.js` (area / tool list) → `core/*` (shell, engine, UI kit, Excel, API, audit) → `modules/<tool>.js` (loaded when opened).
 - `config.js` — environments, sign-in client id (not the secret), admin console login hash, library URLs. No secrets.
-- `layout.json`, `endpoints.json` — team defaults for the honeycomb and API endpoints (empty = built-in).
+- `layout.json`, `endpoints.json` — team defaults for modules/areas/tools and API endpoints (empty = built-in).
 - `core/endpoints.js` — the endpoint registry: every API call, once.
 - `PORTING.md` — how tools are built on the shared engine.
 

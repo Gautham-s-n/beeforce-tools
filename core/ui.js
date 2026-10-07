@@ -222,7 +222,7 @@ function table(cols, rows, o) {
 /* ---------- toast ---------- */
 function toast(msg, kind) {
   var host = app() && app().querySelector('.toasts');
-  if (!host) { console.log('[BeeForce Tools]', msg); return; }
+  if (!host) { console.log('[APIary]', msg); return; }
   var t = h('div.toast' + (kind ? '.' + kind : ''), msg);
   host.appendChild(t);
   setTimeout(function () { t.style.transition = 'opacity .3s'; t.style.opacity = '0'; setTimeout(function () { t.remove(); }, 320); }, kind === 'bad' ? 6500 : 3500);
