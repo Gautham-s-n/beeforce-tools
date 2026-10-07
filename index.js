@@ -12,14 +12,17 @@
   if (old) old.remove(); // every click = fresh load of the latest files
 
   // ---- Modules → areas → tools (max 8 areas per module, 6 tools per area, so each fits the honeycomb) ----
-  // Onboarding, Core, … are added here (or in layout.json / Admin Settings) when their tools exist.
+  // A module with no areas yet shows as "Coming soon" on the module page. Add areas (here, in layout.json or in
+  // Admin Settings) and move tools in to open it.
   var MODULES = [
-    { id: 'attendance', name: 'Attendance', icon: 'clock', desc: 'Timecards, pay rules, shifts, accruals, leave and access.' }
+    { id: 'attendance', name: 'Attendance', icon: 'clock', desc: 'Timecards, pay rules, shifts, accruals, leave and access.' },
+    { id: 'onboarding', name: 'Onboarding', icon: 'userplus', desc: 'Joiners, documents and offer details.' },
+    { id: 'core', name: 'Core', icon: 'building', desc: 'Employee master, org structure and access.' }
   ];
 
   // Built-in defaults. The honeycomb actually shown = these + layout.json (team) + this browser's changes (core/layout.js).
   var AREAS = [
-    { id: 'attendance', module: 'attendance', name: 'Attendance', icon: 'clock', desc: 'Timecards, punches, overtime and approvals.',
+    { id: 'attendance', module: 'attendance', name: 'Timecards & approvals', icon: 'cal', desc: 'Timecards, punches, overtime and approvals.',
       tools: ['timecard-update', 'punch', 'ot-approval', 'workflow-transfer', 'tasks'] },
     { id: 'pay', module: 'attendance', name: 'Pay rules', icon: 'coin', desc: 'Paycodes and the events and combinations that set them.',
       tools: ['paycodes', 'paycode-events', 'paycode-event-sets', 'paycode-combinations'] },

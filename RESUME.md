@@ -1,4 +1,4 @@
-# Resume point — APIary (BeeForce Tools v3) (updated 2026-10-06, evening)
+# Resume point — APIary (BeeForce Tools v3) (updated 2026-10-07, evening)
 
 ## Done
 - Core (shell, engine, UI kit, Excel, API, audit) and all tools ported (26 tools in 8 areas).
@@ -38,6 +38,20 @@
   (modules/dev-panel.js): endpoints, Send GET + response, copy cURL (token hidden / with token after confirm), Postman.
 - Tests: t_theme, t_views, t_modules, t_dev (+ all older suites pass; tool request logs identical to before).
 - Next (waiting on APIs): no-code components from API details for Onboarding / Core.
+
+## v3.2 (2026-10-07 evening) — module page + "liquid hive" design (direction B2, chosen by the user)
+- Module page after a fresh sign-in (bookmark re-open in the same session goes to the module). Onboarding and Core are
+  built-in modules with no areas → "Coming soon" tiles (click = shake + toast). ctx.MODULE_LIST in core/layout.js.
+- Hub = the module: name, minutes left, "Switch module" (→ module page). The chosen tile flows into the hub.
+- Area "Attendance" renamed "Timecards & approvals" (id unchanged, so saved layouts still apply).
+- Rounded hexagons (clip-path path(), CORNER 0.07); springy motion; SVG "goo" filter on the stage only while cells move
+  (flow() in shell.js, off with reduced motion); 3D hover lift + pointer tilt (.cell .tl); honey hover on every cell.
+- Tests: t_modpage.py (new); rig.pick_module() after sign-in; t_modules / t_layout updated for 3 built-in modules;
+  rig PLAIN_CONFIG = fresh repo (username, no hash). All suites pass; tool request logs identical to v3.1.
+- Design mocks: scratchpad design3/ (a_soft, b_liquid, b2_liquid, c_orbit).
+- "Skip this page next time" on the module page (localStorage 'bft.skipModules'; sign-in then opens the saved module if
+  it is live). Arrow keys move focus to the nearest hexagon in that direction (arrowNav), Enter opens, Esc on the module
+  comb → module page. Hint shown on the module page and in the home pane. Test: t_keys.py.
 
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).

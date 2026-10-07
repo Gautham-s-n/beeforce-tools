@@ -181,17 +181,22 @@ function build() {
   });
   var MODULES = m.modules.filter(function (x) { return !x.hidden && AREAS.some(function (a) { return a.module === x.id; }); })
     .map(function (x) { return { id: x.id, name: x.name, icon: x.icon, desc: x.desc }; });
+  // Module page: every visible module in order; one without areas yet is "Coming soon".
+  var MODULE_LIST = m.modules.filter(function (x) { return !x.hidden; }).map(function (x) {
+    var tools = AREAS.filter(function (a) { return a.module === x.id; }).reduce(function (n, a) { return n + a.tools.length; }, 0);
+    return { id: x.id, name: x.name, icon: x.icon, desc: x.desc, tools: tools, soon: !MODULES.some(function (y) { return y.id === x.id; }) };
+  });
   var settings = { id: SETTINGS.id, module: '*', name: SETTINGS.name, icon: SETTINGS.icon, desc: SETTINGS.desc, tools: ['admin-settings'], allTools: ['admin-settings'], system: true };
   if (ctx.adminConsole) {
     // Admin console: only the Settings area (no Beeforce token, so the tools can't run).
     TOOLS = { 'admin-settings': clone(SETTINGS_TOOL) };
     AREAS = [settings];
-    MODULES = [];
+    MODULES = []; MODULE_LIST = [];
   } else if (ctx.adminUnlocked) {
     TOOLS['admin-settings'] = clone(SETTINGS_TOOL);
     AREAS.push(settings);
   }
-  ctx.MODULES = MODULES; ctx.AREAS = AREAS; ctx.TOOLS = TOOLS;
+  ctx.MODULES = MODULES; ctx.MODULE_LIST = MODULE_LIST; ctx.AREAS = AREAS; ctx.TOOLS = TOOLS;
   return { modules: MODULES, areas: AREAS, tools: TOOLS, admin: isAdmin() };
 }
 

@@ -1,4 +1,4 @@
-# APIary (v3.1)
+# APIary (v3.2)
 
 APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
@@ -38,10 +38,18 @@ Change these later from the sign-in card ("Sign-in & audit setup") or Admin Sett
 
 ## Use
 
-Open app.beeforce.in (or UAT), click the bookmark, sign in, pick an area, then a tool. `Ctrl K` finds any tool in
-any module, `Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute session.
+Open app.beeforce.in (or UAT), click the bookmark, sign in, choose a module, pick an area, then a tool. `Ctrl K` finds
+any tool in any module, arrow keys move between hexagons, `Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute
+session; clicking the bookmark again in that session goes straight back to your module.
 
-- **Modules** (top-left pill): Attendance today; Onboarding, Core … appear once they have tools. Each has its own honeycomb.
+- **Module page** (after sign-in): Attendance, Onboarding, Core. A module without tools yet shows "Coming soon".
+  The chosen module becomes the centre cell of its honeycomb: name, minutes left in the session, and "Switch module"
+  (click it to come back to the module page). The top-left pill also switches module.
+  Tick **"Skip this page next time and open the module I choose"** to go straight to your module at sign-in.
+- **Keyboard:** arrow keys move between hexagons, `Enter` opens, `Esc` goes back one level (tool → area → module →
+  module page), `Ctrl K` searches.
+- **Motion:** cells flow like liquid while they move and settle into crisp hexagons; the one under the pointer tilts
+  toward you. Turning on "reduce motion" in Windows / macOS turns these effects off.
 - **Views** (top bar): Honeycomb (default), Gallery, Cards, List. The last one you pick is remembered in this browser.
 - **Theme** (moon / sun icon): dark, light, or follow your system. Remembered in this browser.
 
@@ -66,7 +74,7 @@ first) and a Postman download. Writes are never sent from the Developer panel. U
 Only a hash of the password is stored. This runs in the browser and config.js is public, so it keeps people out of
 the screens but is not server-grade security; the real lock is who can commit to the GitHub repository.
 
-- **Layout** — modules (add, rename, hide, order), then per module: rename, reorder, hide or move areas and tools,
+- **Layout** — modules (add, rename, hide, order; a module with no areas shows as "Coming soon"), then per module: rename, reorder, hide or move areas and tools,
   add areas, move areas between modules. Collapsible list with search. Limits: 8 areas per module, 6 tools per area.
   "Save to this browser" changes only your browser. "Export layout.json" gives a file for the whole team.
 - **Sign-in & audit** — client id/secret and audit webhook for this browser; status: configured / not configured / needs attention.

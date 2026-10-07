@@ -97,7 +97,7 @@ function layoutTab(el) {
     return h('div.modcard', tabs,
       h('div.acc-grid', UI.field('Module name', name), UI.field('Icon', icon), UI.field('Order', moveBtns(model.modules, k))),
       UI.field('Description', desc),
-      h('div.row', { style: { alignItems: 'center' } }, vis, h('span.small.dim', empty ? 'No areas yet — a module shows up once it has a visible area with tools.' : ''), h('span', { style: { flex: 1 } }),
+      h('div.row', { style: { alignItems: 'center' } }, vis, h('span.small.dim', empty ? 'No areas yet — shows as "Coming soon" on the module page until it has a visible area with tools.' : ''), h('span', { style: { flex: 1 } }),
         !isDefault && empty ? UI.btn('Delete module', { sm: true, kind: 'quiet', icon: 'trash', onClick: function () { model.modules.splice(k, 1); draw(); } }) : null));
   }
   async function addModule() {

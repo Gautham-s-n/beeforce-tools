@@ -1,9 +1,13 @@
-/* core/shell.js — the honeycomb shell: sign-in, home comb, area bloom, tool trail, palette.
+/* core/shell.js — the honeycomb shell: sign-in, module page, home comb, area bloom, tool trail, palette.
  *
  * Every hex on screen is one absolutely positioned button. Moving between levels only changes
  * each cell's transform/opacity, so CSS animates everything (staggered), and cells never re-mount.
+ * While cells move, the stage gets a "liquid" SVG filter (cells stretch and bridge into each other);
+ * it fades out when they settle, so at rest the hexagons are crisp. Hovered cells tilt toward the pointer.
  *
- *   home  : hub in the middle, 8 areas around it
+ *   modules: one big tile per module (Attendance, Onboarding, Core …); modules without areas say "Coming soon".
+ *            The chosen tile flows into the centre and becomes the hub.
+ *   home  : hub (module name, minutes left, "Switch module") in the middle, 8 areas around it
  *   area  : chosen area moves to the centre, its tools bloom into the ring,
  *           hub + other areas shrink into a mini-map on the left
  *   tool  : hub / area / tool fold into a vertical trail on the left, the workspace slides in
@@ -16,6 +20,23 @@ var BW = 176, BH = Math.round(BW * 1.1547); // base cell size; real size via sca
 var SIDE = 320;
 var LEVEL1 = [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0], [2, -1], [-2, 1], [1, 1]]; // 9th slot = Settings (admins)
 var RING = [[1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1]];
+var MODW = 260;        // base size of a module tile
+var CORNER = 0.07;     // hexagon corner rounding (share of the width)
+
+/* Pointy-top hexagon with rounded corners as an SVG path, for clip-path: path(). */
+function hexPath(w, hh, inset) {
+  inset = inset || 0;
+  var r = w * CORNER, x0 = inset, y0 = inset, W = w - inset * 2, H = hh - inset * 2;
+  var v = [[x0 + W / 2, y0], [x0 + W, y0 + H / 4], [x0 + W, y0 + 3 * H / 4], [x0 + W / 2, y0 + H], [x0, y0 + 3 * H / 4], [x0, y0 + H / 4]];
+  var d = '';
+  for (var i = 0; i < 6; i++) {
+    var p = v[i], a = v[(i + 5) % 6], b = v[(i + 1) % 6];
+    var la = Math.hypot(a[0] - p[0], a[1] - p[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+    d += (i ? 'L' : 'M') + (p[0] + (a[0] - p[0]) * r / la).toFixed(2) + ' ' + (p[1] + (a[1] - p[1]) * r / la).toFixed(2) +
+      'Q' + p[0].toFixed(2) + ' ' + p[1].toFixed(2) + ' ' + (p[0] + (b[0] - p[0]) * r / lb).toFixed(2) + ' ' + (p[1] + (b[1] - p[1]) * r / lb).toFixed(2);
+  }
+  return d + 'Z';
+}
 
 ctx.CSS += '\n' + [
   '.cell .hico{display:none}',
@@ -78,11 +99,45 @@ ctx.CSS += '\n' + [
   '.envpill.adm i{background:var(--honey);box-shadow:0 0 10px var(--honey)}',
   'pre.code{white-space:pre-wrap;word-break:break-all}',
   '.login{overflow:auto;padding:24px 0}',
-  '.lcard code,.page code{font:12px ui-monospace,Consolas,monospace;color:var(--ink2);word-break:break-all}'
+  '.lcard code,.page code{font:12px ui-monospace,Consolas,monospace;color:var(--ink2);word-break:break-all}',
+  /* liquid motion + 3D hover */
+  '.stage.goo{filter:url(#bft-goo)}',
+  '.cell .tl{width:100%;height:100%;transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(var(--z,0px)) scale(var(--k,1));transition:transform .45s var(--spring)}',
+  '.cell:hover:not(.gone) .tl,.cell:focus-visible .tl{--z:42px;--k:1.05;transition:transform .3s var(--spring)}',
+  '.cell.mini:hover:not(.gone) .tl{--z:0px;--k:1.12}',
+  '.cell.ghost:not(.back):hover .tl{--z:0px;--k:1}',
+  '.cell.nope .tl{animation:nope .45s var(--ease)}',
+  '@keyframes nope{20%{translate:-8px 0}40%{translate:7px 0}60%{translate:-4px 0}80%{translate:2px 0}}',
+  /* hub = the module */
+  '.cell.hub .hn{font-size:19px;font-weight:800;letter-spacing:-.015em;color:var(--honeyink)}',
+  '.cell.hub .hs{font-size:12.5px;color:var(--honeyink2)}.cell.hub .hs b{font-weight:800;color:var(--honeyink)}.cell.hub .hs.low b{color:#B4232F}',
+  '.cell.hub .hw{font-size:11.5px;font-weight:600;color:var(--honeyink2)}',
+  '.cell.hub .face{gap:3px}',
+  /* module page */
+  '.side{transition:opacity .35s var(--ease),transform .45s var(--ease)}.side.off{opacity:0;transform:translateX(-16px);pointer-events:none}',
+  '.modhead{position:absolute;left:0;right:0;top:6vh;text-align:center;z-index:7;pointer-events:none;padding:0 20px;transition:opacity .4s var(--ease),transform .55s var(--ease)}',
+  '.modhead.off{opacity:0;transform:translateY(-14px)}',
+  '.modhead h1{margin:0;font-size:38px;font-weight:800;letter-spacing:-.025em}.modhead p{margin:8px 0 0;color:var(--ink2);font-size:15px}',
+  '.modfoot{position:absolute;left:0;right:0;bottom:5vh;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:7;transition:opacity .4s var(--ease),transform .55s var(--ease)}',
+  '.modfoot.off{opacity:0;transform:translateY(12px);pointer-events:none}',
+  '.modfoot .check{padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel)}',
+  '.keyhint{font-size:12px;color:var(--ink3);display:flex;flex-wrap:wrap;gap:4px 12px}.keyhint span{white-space:nowrap}.modfoot .keyhint{justify-content:center}.keyhint kbd{font:600 11px ui-monospace,Consolas,monospace;padding:1px 5px;border:1px solid var(--line2);border-radius:5px;color:var(--ink2)}',
+  '.cell.mod .face{background:var(--modface);gap:8px;padding:0 40px}',
+  '.cell.mod .nm{font-size:23px;font-weight:800;letter-spacing:-.01em}',
+  '.cell.mod .ds{font-size:13px;color:var(--ink2);line-height:1.4;transition:color .2s}',
+  '.cell.mod .ic{color:var(--blue3)}',
+  '.cell.mod .mpill{margin-top:4px;font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;background:var(--bluebg);color:var(--blue3);transition:background .2s,color .2s}',
+  '.cell.mod.soon{cursor:not-allowed}.cell.mod.soon .mpill{background:var(--chipbg);color:var(--ink2)}',
+  '.cell.mod.soon .face>*{opacity:.6;transition:opacity .2s}',
+  '.cell.mod:hover:not(.gone) .face,.cell.mod:focus-visible .face{background:var(--honeygrad)}',
+  '.cell.mod:hover:not(.gone) .face>*,.cell.mod:focus-visible .face>*{opacity:1}',
+  '.cell.mod:hover:not(.gone) .nm,.cell.mod:hover:not(.gone) .ic,.cell.mod:focus-visible .nm,.cell.mod:focus-visible .ic{color:var(--honeyink)}',
+  '.cell.mod:hover:not(.gone) .ds,.cell.mod:focus-visible .ds{color:var(--honeyink2)}',
+  '.cell.mod:hover:not(.gone) .mpill,.cell.mod:focus-visible .mpill{background:#2A1A0024;color:var(--honeyink)}'
 ].join('\n');
 
 var VIEWS = [['honeycomb', 'hexgrid', 'Honeycomb'], ['gallery', 'cards', 'Gallery'], ['cards', 'layers', 'Cards'], ['list', 'list', 'List']];
-var S = { level: 'login', area: null, tool: null, module: null, view: 'honeycomb' };
+var S = { level: 'login', area: null, tool: null, module: null, view: 'honeycomb' }; // level: login | modules | home | area | tool
 var R = {};            // element refs
 var cells = {};        // id -> cell element
 var views = {};        // tool id -> workspace element (kept so work in progress survives navigation)
@@ -346,7 +401,18 @@ function buildMain(fromLogin) {
   R.tip = h('div.tip');
   R.work = h('div.work');
   R.gallery = h('div.gallery');
-  R.body = h('div.body', R.side, R.stage, R.gallery, R.peek, R.tip, R.work);
+  R.modHead = h('div.modhead.off', h('h1', 'Choose a module'), h('p'));
+  // "Remember my module": skip this page at sign-in and open the module chosen here (the hub still brings you back)
+  var skip = UI.check('Skip this page next time and open the module I choose', !!U.store.get('skipModules', false));
+  skip.input.addEventListener('change', function () { U.store.set('skipModules', skip.input.checked); UI.toast(skip.input.checked ? 'Next sign-in opens your module directly. Click the centre cell to come back here.' : 'The module page will show after every sign-in.'); });
+  R.modFoot = h('div.modfoot.off', skip, keyHint());
+  // the liquid filter (blur + alpha threshold); its blur is animated by flow()
+  var defs = h('div', { style: { position: 'absolute', width: '0', height: '0', overflow: 'hidden' }, 'aria-hidden': 'true' });
+  defs.innerHTML = '<svg width="0" height="0"><filter id="bft-goo" filterUnits="userSpaceOnUse" x="-2000" y="-2000" width="8000" height="8000" color-interpolation-filters="sRGB">' +
+    '<feGaussianBlur in="SourceGraphic" stdDeviation="0" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11" result="g"/>' +
+    '<feComposite in="SourceGraphic" in2="g" operator="atop"/></filter></svg>';
+  R.blur = defs.querySelector('feGaussianBlur');
+  R.body = h('div.body', defs, R.side, R.modHead, R.modFoot, R.stage, R.gallery, R.peek, R.tip, R.work);
   app.insertBefore(top, R.toasts);
   app.insertBefore(R.body, R.toasts);
 
@@ -357,28 +423,44 @@ function buildMain(fromLogin) {
 
   // first frame: everything gathered at the hub, then bloom out
   layout({ intro: true });
-  requestAnimationFrame(function () { requestAnimationFrame(function () { if (ctx.adminConsole) go('tool', 'settings', 'admin-settings'); else go('home'); }); });
+  // After sign-in: the module page. Re-opening the bookmark in the same session goes straight back to the module.
+  var live = (ctx.MODULES || []).some(function (m) { return m.id === S.module; });
+  var toModules = fromLogin && !ctx.adminConsole && (ctx.MODULE_LIST || []).length > 0 && !(U.store.get('skipModules', false) && live);
+  requestAnimationFrame(function () { requestAnimationFrame(function () { if (ctx.adminConsole) go('tool', 'settings', 'admin-settings'); else go(toModules ? 'modules' : 'home'); }); });
   tickSession();
 }
 
-function mkCell(id, cls, content, onClick, label) {
-  var c = h('button.cell.' + cls, { type: 'button', 'aria-label': label || id, style: { width: BW + 'px', height: BH + 'px' } },
-    h('div.rim', h('div.face', content)));
+function mkCell(id, cls, content, onClick, label, size) {
+  var w = size || BW, hh = Math.round(w * 1.1547);
+  var c = h('button.cell.' + cls, { type: 'button', 'aria-label': label || id, style: { width: w + 'px', height: hh + 'px' } },
+    h('div.tl', h('div.rim', { style: { clipPath: 'path("' + hexPath(w, hh) + '")' } }, h('div.face', { style: { clipPath: 'path("' + hexPath(w - 3, hh - 3) + '")' } }, content))));
+  c._bw = w; c._bh = hh;
   c.addEventListener('click', function (e) { if (!c.classList.contains('gone')) onClick && onClick(e); });
+  c.addEventListener('mousemove', function (e) { tilt(c, e); });
+  c.addEventListener('mouseleave', function () { untilt(c); });
   cells[id] = c;
   R.stage.appendChild(c);
   return c;
 }
 
 function buildCells() {
-  // hub
-  R.ringEl = h('div.ring', h('b', '—'));
-  var hub = mkCell('hub', 'hub', [R.ringEl, U.icon('home', 22), h('div.ct', 'min left')], function () {
-    if (S.level === 'home') openPalette(); else go('home');
-  }, 'Home');
+  // module tiles (module page)
+  if (!ctx.adminConsole) (ctx.MODULE_LIST || []).forEach(function (m) {
+    mkCell('m:' + m.id, 'mod' + (m.soon ? '.soon' : ''), [U.icon(m.icon, 30), h('div.nm', m.name), m.desc ? h('div.ds', m.desc) : null,
+      h('div.mpill', m.soon ? 'Coming soon' : m.tools + (m.tools === 1 ? ' tool' : ' tools'))],
+      function () { chooseModule(m); }, m.name + (m.soon ? ' (coming soon)' : ''), MODW);
+  });
+  // hub = the current module: its name, minutes left in the session, and the way back to the module page
+  var mod = moduleById(S.module);
+  var many = !ctx.adminConsole && (ctx.MODULE_LIST || []).length > 0;
+  R.minEl = h('b', '—');
+  R.minWrap = h('div.ct.hs', R.minEl, ' min left');
+  var hub = mkCell('hub', 'hub', [U.icon(mod ? mod.icon : 'home', 22), h('div.nm.hn', mod ? mod.name : 'APIary'), R.minWrap, many ? h('div.ct.hw', 'Switch module') : null], function () {
+    if (S.level === 'home') { if (many) go('modules'); else openPalette(); } else go('home');
+  }, mod ? mod.name : 'Home');
   hub.querySelector('.ic').classList.add('hico');
-  hub.title = 'Home · Ctrl K to search';
-  hub.addEventListener('mouseenter', function () { if (S.level !== 'home') showTip(hub, 'Home'); });
+  hub.title = many ? 'Switch module · Ctrl K to search' : 'Home · Ctrl K to search';
+  hub.addEventListener('mouseenter', function () { if (S.level !== 'home' && S.level !== 'modules') showTip(hub, (mod ? mod.name + ' · ' : '') + 'Home'); });
   hub.addEventListener('mouseleave', hideTip);
 
   AREAS.forEach(function (a) {
@@ -417,10 +499,39 @@ function axial(q, r, w, gap, cx, cy) {
   return { x: cx + (w + gap) * (q + r / 2), y: cy + (w * 1.1547 * 0.75 + gap * 0.87) * r };
 }
 function place(id, x, y, w, o) {
-  return { id: id, x: x, y: y, s: w / BW, o: o == null ? 1 : o };
+  return { id: id, x: x, y: y, w: w, o: o == null ? 1 : o };
 }
 
+/* Module tiles live at the hub when they're not on screen, so the chosen one can flow into it (and back out). */
 function computeLayout(opts) {
+  var L = S.level === 'modules' ? modulesLayout() : levelLayout(opts);
+  if (S.level !== 'modules') {
+    var hb = L.hub;
+    (ctx.MODULE_LIST || []).forEach(function (m) { var p = place('m:' + m.id, hb.x, hb.y, hb.w, 0); p.gone = 1; L['m:' + m.id] = p; });
+  }
+  return L;
+}
+function modulesLayout() {
+  var W = R.body.clientWidth, H = R.body.clientHeight;
+  var list = ctx.MODULE_LIST || [], n = list.length || 1, gap = 26;
+  var tw = Math.max(150, Math.min(MODW, (W - 60) / n - gap, (H - 210) / 1.1547));
+  var cx = W / 2, cy = Math.max(H / 2 + 40, 150 + tw * 0.58);
+  var L = {}, at = { x: cx, y: cy };
+  list.forEach(function (m, i) {
+    var p = place('m:' + m.id, cx + (i - (n - 1) / 2) * (tw + gap), cy, tw);
+    p.d = 80 + i * 90; L['m:' + m.id] = p;
+    if (m.id === S.module) at = p;
+  });
+  // the hub waits, invisible, inside the current module's tile
+  L.hub = place('hub', at.x, at.y, tw, 0); L.hub.gone = 1;
+  Object.keys(cells).forEach(function (id) {
+    if (L[id]) return;
+    L[id] = place(id, at.x, at.y, tw * 0.3, 0); L[id].gone = 1;
+  });
+  return L;
+}
+
+function levelLayout(opts) {
   opts = opts || {};
   var W = R.body.clientWidth, H = R.body.clientHeight;
   var cx = SIDE + (W - SIDE) / 2, cy = H / 2;
@@ -430,11 +541,12 @@ function computeLayout(opts) {
   if ((S.level === 'home' || opts.intro) && S.view !== 'honeycomb') {
     // Gallery / cards / list views: the honeycomb waits, gathered and invisible, at the centre.
     Object.keys(cells).forEach(function (id) { L[id] = place(id, cx, cy, 30, 0); L[id].gone = 1; });
+    L.hub = place('hub', cx, cy, 170, 0); L.hub.gone = 1;
     return L;
   }
   if (S.level === 'home' || opts.intro) {
     var k = Math.min(1, (W - SIDE - 60) / 790, (H - 40) / 570);
-    var w = 170 * k, gap = 10 * k;
+    var w = 168 * k, gap = 16 * k;
     hubAt = { x: cx, y: cy };
     L.hub = place('hub', cx, cy, w);
     AREAS.forEach(function (a, i) {
@@ -452,7 +564,7 @@ function computeLayout(opts) {
   var area = areaById(S.area);
   if (S.level === 'area') {
     var k2 = Math.min(1, (W - SIDE - 60) / 600, (H - 40) / 560);
-    var unit = 176 * k2, gap2 = 10 * k2;
+    var unit = 174 * k2, gap2 = 15 * k2;
     L['a:' + area.id] = place('a:' + area.id, cx, cy, 190 * k2);
     L['a:' + area.id].sel = 1;
     var slots = RING.map(function (q) { return axial(q[0], q[1], unit, gap2, cx, cy); });
@@ -506,11 +618,13 @@ function layout(opts) {
   opts = opts || {};
   var L = computeLayout(opts);
   var rm = U.reducedMotion();
+  var maxD = 0;
   Object.keys(cells).forEach(function (id) {
     var c = cells[id], p = L[id];
     if (!p) return;
+    maxD = Math.max(maxD, p.d || 0);
     c.style.transitionDelay = rm || opts.instant ? '0ms' : (p.d || 0) + 'ms';
-    c.style.transform = 'translate(' + Math.round(p.x - BW / 2) + 'px,' + Math.round(p.y - BH / 2) + 'px) scale(' + p.s.toFixed(4) + ')';
+    c.style.transform = 'translate(' + Math.round(p.x - c._bw / 2) + 'px,' + Math.round(p.y - c._bh / 2) + 'px) scale(' + (p.w / c._bw).toFixed(4) + ')';
     c.style.opacity = String(p.o);
     c.classList.toggle('gone', !!p.gone || p.o === 0);
     c.classList.toggle('mini', !!p.mini);
@@ -520,11 +634,40 @@ function layout(opts) {
     c.tabIndex = p.gone || p.o === 0 || (id.indexOf('g:') === 0 && !p.back) ? -1 : 0;
     c.setAttribute('aria-hidden', p.gone || p.o === 0 ? 'true' : 'false');
   });
+  if (opts.instant) void R.stage.offsetWidth; // commit, so the next layout animates from here
+  else if (!rm) { flow(maxD + 950); R.settleAt = Date.now() + maxD + 650; }
 }
+
+/* ---------------- liquid motion + hover tilt ---------------- */
+var Goo = { v: 0, t: 0, run: false, timer: null };
+function flow(ms) {
+  if (!R.blur || U.reducedMotion()) return;
+  Goo.t = 11; clearTimeout(Goo.timer);
+  Goo.timer = setTimeout(function () { Goo.t = 0; }, ms);
+  if (!Goo.run) { Goo.run = true; requestAnimationFrame(gooTick); }
+}
+function gooTick() {
+  if (!R.blur || !R.blur.isConnected) { Goo.run = false; Goo.v = 0; return; }
+  Goo.v += (Goo.t - Goo.v) * (Goo.t > Goo.v ? 0.35 : 0.1);
+  if (Goo.t === 0 && Goo.v < 0.1) Goo.v = 0;
+  R.blur.setAttribute('stdDeviation', Goo.v.toFixed(2));
+  R.stage.classList.toggle('goo', Goo.v > 0.15);
+  if (!Goo.v && !Goo.t) { Goo.run = false; return; }
+  requestAnimationFrame(gooTick);
+}
+function tilt(c, e) {
+  if (c.classList.contains('gone') || c.classList.contains('mini') || (c.classList.contains('ghost') && !c.classList.contains('back')) || U.reducedMotion()) return;
+  var r = c.getBoundingClientRect();
+  var fx = (e.clientX - r.left) / r.width - 0.5, fy = (e.clientY - r.top) / r.height - 0.5;
+  c.style.setProperty('--ry', (fx * 14).toFixed(1) + 'deg');
+  c.style.setProperty('--rx', (-fy * 14).toFixed(1) + 'deg');
+}
+function untilt(c) { c.style.removeProperty('--rx'); c.style.removeProperty('--ry'); }
 
 /* ---------------- navigation ---------------- */
 function go(level, areaId, toolId) {
   hidePeek(); hideTip(); closeMenus();
+  if (level === 'modules' && !(ctx.MODULE_LIST || []).length) level = 'home';
   var prev = S.level;
   if (level === 'tool' && !areaId) areaId = areaOf(toolId).id;
   // A tool or area in another module: switch module first.
@@ -549,7 +692,17 @@ function go(level, areaId, toolId) {
     });
   }
   S.level = level; S.area = areaId || null; S.tool = toolId || null;
+  var onMods = level === 'modules';
+  if (onMods) drawModHead();
+  R.modHead.classList.toggle('off', !onMods);
+  R.modFoot.classList.toggle('off', !onMods);
+  R.side.classList.toggle('off', onMods);
+  R.modPill.style.visibility = onMods ? 'hidden' : '';
+  R.viewSw.style.visibility = onMods ? 'hidden' : '';
   layout();
+  // keyboard focus must not stay on a cell that just went away (e.g. the module tile you clicked)
+  var fe = ctx.root.activeElement;
+  if (fe && fe.classList && fe.classList.contains('cell') && fe.classList.contains('gone')) fe.blur();
   drawCrumb();
   R.homePane.classList.toggle('off', level !== 'home');
   R.areaPane.classList.toggle('off', level !== 'area');
@@ -564,6 +717,28 @@ function go(level, areaId, toolId) {
 }
 
 /* ---------------- modules ---------------- */
+function drawModHead() {
+  var soon = (ctx.MODULE_LIST || []).filter(function (m) { return m.soon; }).map(function (m) { return m.name; });
+  var names = soon.length > 1 ? soon.slice(0, -1).join(', ') + ' and ' + soon[soon.length - 1] : soon[0];
+  R.modHead.querySelector('p').textContent = 'Signed in to ' + (Api.envLabel() || 'Beeforce') + '. ' +
+    (soon.length ? names + (soon.length > 1 ? ' open' : ' opens') + ' once ' + (soon.length > 1 ? 'their' : 'its') + ' tools are added.' : 'Each module has its own honeycomb.');
+}
+function chooseModule(m) {
+  var c = cells['m:' + m.id];
+  if (m.soon) {
+    if (c) { c.classList.remove('nope'); void c.offsetWidth; c.classList.add('nope'); }
+    UI.toast(m.name + ' opens once its tools are added.');
+    return;
+  }
+  if (m.id !== S.module) {
+    // rebuild the comb for this module, parked on the module page, then let it flow out
+    S.module = m.id; U.store.set('module', m.id);
+    scope(); rebuildCells();
+    layout({ instant: true });
+    drawModulePill();
+  }
+  go('home');
+}
 function switchModule(id, silent) {
   if (!id || id === S.module) return;
   S.module = id; U.store.set('module', id);
@@ -695,9 +870,11 @@ function drawGallery(focusArea) {
 function back() {
   if (S.level === 'tool') go('area', S.area);
   else if (S.level === 'area') go('home');
+  else if (S.level === 'home' && (ctx.MODULE_LIST || []).length) go('modules');
 }
 
 function drawCrumb() {
+  if (S.level === 'modules') { U.clear(R.crumb); return; }
   var parts = [h('button', { type: 'button', onclick: function () { go('home'); } }, 'Home')];
   if (S.area && !(S.level === 'tool' && skipArea(areaById(S.area)))) { var a = areaById(S.area); parts.push(h('i', '›')); parts.push(S.level === 'area' ? h('b', a.name) : h('button', { type: 'button', onclick: function () { go('area', a.id); } }, a.name)); }
   if (S.tool) { parts.push(h('i', '›')); parts.push(h('b', TOOLS[S.tool].name)); }
@@ -715,6 +892,7 @@ function drawHomePane() {
     h('h1', (moduleById(S.module) || {}).name || 'Configuration'),
     h('p', 'Pick ' + (S.view === 'honeycomb' ? 'an area, then a tool' : 'a tool') + '. Every change is shown for review before it is written to ' + (Api.envLabel() || 'Beeforce') + '.'),
     h('button.searchbtn', { type: 'button', onclick: openPalette }, U.icon('search', 18), 'Find a tool', h('kbd', 'Ctrl K')),
+    S.view === 'honeycomb' ? h('div', { style: { marginTop: '10px' } }, keyHint()) : null,
     ctx.Secrets.auditState() === 'configured' ? null : h('div', { style: { marginTop: '12px' } }, auditBadge(),
       h('div.small.dim', { style: { marginTop: '4px' } }, ctx.Secrets.auditState() === 'not-configured' ? 'Audit events will not be sent from this browser.' : ctx.Secrets.auditState() === 'failed' ? 'The last webhook test failed. Audit may not be delivered.' : 'Webhook saved, delivery not confirmed.')),
     rec.length ? h('div.label', 'Recent') : null,
@@ -807,6 +985,7 @@ function markAdmin() { if (ctx.appEl) ctx.appEl.classList.toggle('admin', ctx.La
 
 /* ---------------- hover peek + tips ---------------- */
 function showPeek(a, cell) {
+  if (Date.now() < (R.settleAt || 0)) return; // cells are still flowing under the pointer
   var r = cell.getBoundingClientRect(), b = R.body.getBoundingClientRect();
   U.swap(R.peek, h('b', a.name), h('p', a.desc), h('ul', a.tools.map(function (t) { return h('li', TOOLS[t].name); })), h('em', 'Click to open →'));
   var left = r.right - b.left + 14;
@@ -865,6 +1044,7 @@ function openPalette() {
   ctx.appEl.appendChild(scrim);
   R.pal = scrim;
   draw();
+  q.focus();
   requestAnimationFrame(function () { scrim.classList.add('on'); pal.classList.add('on'); q.focus(); });
   function close() {
     if (!R.pal) return;
@@ -880,10 +1060,10 @@ function tickSession() {
   function upd() {
     if (S.level === 'login' || !Api.state.token) return;
     var left = Api.minutesLeft();
-    var pct = Math.max(0, Math.min(100, left / ctx.CONFIG.TOKEN_VALIDITY_MIN * 100));
-    if (R.ringEl) {
-      R.ringEl.style.background = 'conic-gradient(' + (left <= 10 ? 'var(--bad)' : 'var(--honey)') + ' ' + pct + '%, var(--ringtrack) 0)';
-      R.ringEl.firstChild.textContent = String(left);
+    if (R.minEl) {
+      R.minEl.textContent = String(left);
+      R.minWrap.classList.toggle('low', left <= 10);
+      if (cells.hub) cells.hub.setAttribute('aria-label', ((moduleById(S.module) || {}).name || 'Home') + ', ' + left + ' minutes left in this session');
     }
     if (left <= 0) {
       clearInterval(R.timer);
@@ -985,15 +1165,47 @@ function hide() {
 document.addEventListener('mousedown', function (e) {
   if (R.menu && ctx.host && e.composedPath && e.composedPath().indexOf(R.menu.parentNode) < 0) closeMenus();
 }, true);
+function keyHint() { return h('div.keyhint', h('span', h('kbd', '←'), ' ', h('kbd', '→'), ' ', h('kbd', '↑'), ' ', h('kbd', '↓'), ' move'), h('span', h('kbd', 'Enter'), ' open'), h('span', h('kbd', 'Esc'), ' back')); }
 function onKey(e) {
   if (!ctx.host || !ctx.host.isConnected) return;
   if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); e.stopPropagation(); openPalette(); return; }
-  if (e.key === 'Escape' && !R.pal && !ctx.appEl.querySelector('.scrim') && (S.level === 'tool' || S.level === 'area')) {
-    var path = e.composedPath ? e.composedPath() : [];
-    var inField = path.some(function (n) { return n && /^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName); });
-    if (inField) return;
+  if (R.pal || S.level === 'login' || !ctx.appEl.isConnected || ctx.appEl.querySelector('.scrim')) return;
+  var path = e.composedPath ? e.composedPath() : [];
+  if (path.some(function (n) { return n && (/^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName) || n.isContentEditable); })) return;
+  if (e.key === 'Escape' && (S.level === 'tool' || S.level === 'area' || (S.level === 'home' && (ctx.MODULE_LIST || []).length))) {
     e.preventDefault(); e.stopPropagation(); back();
+    return;
   }
+  if (/^Arrow/.test(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey && (S.level === 'modules' || S.level === 'home' || S.level === 'area')) {
+    if (arrowNav(e.key)) { e.preventDefault(); e.stopPropagation(); }
+  }
+}
+/* Arrow keys move focus to the nearest hexagon in that direction; Enter / Space open it (they're buttons). */
+function arrowNav(key) {
+  var dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[key];
+  var list = Array.prototype.filter.call(R.stage.querySelectorAll('.cell'), function (c) {
+    return !c.classList.contains('gone') && !c.classList.contains('mini') && !(c.classList.contains('ghost') && !c.classList.contains('back'));
+  });
+  if (!dir || !list.length) return false;
+  var cur = ctx.root.activeElement;
+  if (list.indexOf(cur) < 0) {
+    var first = S.level === 'modules' ? (cells['m:' + S.module] || list[0]) : S.level === 'area' ? (cells['a:' + S.area] || list[0]) : (cells.hub || list[0]);
+    if (list.indexOf(first) < 0) first = list[0];
+    first.focus({ preventScroll: true });
+    return true;
+  }
+  var mid = function (c) { var r = c.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+  var p = mid(cur), best = null, bestScore = Infinity;
+  list.forEach(function (c) {
+    if (c === cur) return;
+    var q = mid(c), dx = q[0] - p[0], dy = q[1] - p[1];
+    var along = dx * dir[0] + dy * dir[1], across = Math.abs(dx * dir[1] - dy * dir[0]);
+    if (along <= 4 || across > along * 1.8) return;
+    var score = along + across * 2;
+    if (score < bestScore) { bestScore = score; best = c; }
+  });
+  if (best) best.focus({ preventScroll: true });
+  return true;
 }
 var rt;
 function onResize() { clearTimeout(rt); rt = setTimeout(function () { if (S.level !== 'login') layout({ instant: true }); }, 80); }
@@ -1024,11 +1236,11 @@ function relayout() {
   if (S.area && !areaById(S.area)) { S.area = S.tool ? areaOf(S.tool).id : null; if (!S.area) S.level = 'home'; }
   layout({ instant: true });
   drawCrumb();
-  if (S.level === 'home') drawHomePane(); else if (S.level === 'area') drawAreaPane(); else drawToolPane();
+  if (S.level === 'home') drawHomePane(); else if (S.level === 'area') drawAreaPane(); else if (S.level === 'tool') drawToolPane(); else if (S.level === 'modules') drawModHead();
 }
 
 ctx.Shell = {
-  relayout: relayout, switchModule: switchModule, setView: setView,
+  relayout: relayout, switchModule: switchModule, setView: setView, chooseModule: chooseModule,
   start: start, go: go, back: back, hide: hide, openPalette: openPalette, secretsPanel: secretsPanel, auditBadge: auditBadge, adminLoginPanel: adminLoginPanel,
   state: S,
   noteRun: function (module, ok, failed) {
