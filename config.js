@@ -16,7 +16,7 @@ ctx.CONFIG = {
   // Admin console login: fixed username + a password that opens only the Settings screens (no Beeforce sign-in).
   // First time: sign in with this username and any password → "Create admin password" → paste the generated line
   // here (replacing this one) and commit. Change it later in Admin Settings → Admin login. Only a hash is stored.
-  ADMIN_LOGIN: { username: 'bft.admin', salt: null, hash: null, iterations: 210000 },
+  ADMIN_LOGIN: { username: 'bft.admin', salt: '9c9c4b16d4fc79a6084f1749a6500eb4', hash: 'e53a4a80ca2a701175c84012e1d841a5a6f63865313477016cab91e3a377cf37', iterations: 210000 },
 
   // Session length shown in the session ring (minutes).
   TOKEN_VALIDITY_MIN: 120,
