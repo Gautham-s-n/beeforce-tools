@@ -41,10 +41,21 @@ Change these later from the sign-in card ("Sign-in & audit setup") or Admin Sett
 Open app.beeforce.in (or UAT), click the bookmark, sign in, pick an area, then a tool. `Ctrl K` finds any tool,
 `Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute session.
 
-## Admin Settings (Settings area)
+## Admin console (Settings)
 
-Only usernames listed in `ADMIN_USERS` in `config.js` see the Settings area and can open Admin Settings.
-This hides the screens from other users; it is not a security boundary (everything runs in the browser).
+The Settings screens open only through the **admin console login**: username `bft.admin` (fixed in `config.js`)
+and its own password — not a Beeforce account. Type them on the normal sign-in card; the tool opens Admin Settings
+without calling Beeforce. Admin-username attempts (right or wrong password) are never sent to Beeforce.
+Normal Beeforce logins never see Settings.
+
+- **First time:** sign in as `bft.admin` with any password → "Create admin password" → choose 14+ characters →
+  copy the generated `ADMIN_LOGIN: {…}` line into `config.js` on GitHub (replace that line) and commit.
+- **Change password:** Admin Settings → **Admin password** → current + new password → copy the new line → commit.
+  The old password keeps working until the commit.
+- To rename the admin user, edit `username` in that line (then create a new password, since the hash includes it).
+
+Only a hash of the password is stored. This runs in the browser and config.js is public, so it keeps people out of
+the screens but is not server-grade security; the real lock is who can commit to the GitHub repository.
 
 - **Honeycomb** — rename, reorder, hide or move areas and tools, add areas. Limits: 8 areas, 6 tools per area.
   "Save to this browser" changes only your browser. "Export layout.json" gives a file for the whole team.
@@ -59,7 +70,7 @@ To change the team default, export the file from Admin Settings and commit it ne
 ## Files
 
 - `loader.js` → `index.js` (area / tool list) → `core/*` (shell, engine, UI kit, Excel, API, audit) → `modules/<tool>.js` (loaded when opened).
-- `config.js` — environments, sign-in client id (not the secret), admin usernames, library URLs. No secrets.
+- `config.js` — environments, sign-in client id (not the secret), admin console login hash, library URLs. No secrets.
 - `layout.json`, `endpoints.json` — team defaults for the honeycomb and API endpoints (empty = built-in).
 - `core/endpoints.js` — the endpoint registry: every API call, once.
 - `PORTING.md` — how tools are built on the shared engine.

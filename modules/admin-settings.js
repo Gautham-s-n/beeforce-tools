@@ -9,11 +9,12 @@ ctx.ADMIN_TABS = ctx.ADMIN_TABS || [];   // other core parts can add tabs: { id,
 ctx.defineTool('admin-settings', {
   desc: 'Arrange the honeycomb, set this browser’s sign-in client and audit webhook, and manage API endpoints.',
   render: function (body) {
-    if (!L.isAdmin()) { body.appendChild(UI.note('bad', 'Admins only', 'Your username is not in ADMIN_USERS (config.js).')); return; }
+    if (!L.isAdmin()) { body.appendChild(UI.note('bad', 'Admins only', 'Open Admin Settings from the admin console login.')); return; }
     body.appendChild(UI.tabs([
       { id: 'layout', label: 'Honeycomb', render: layoutTab },
       { id: 'secrets', label: 'Sign-in & audit', render: secretsTab },
-      { id: 'endpoints', label: 'API endpoints', render: endpointsTab }
+      { id: 'endpoints', label: 'API endpoints', render: endpointsTab },
+      { id: 'admin', label: 'Admin password', render: function (el) { el.appendChild(h('div.card', ctx.Shell.adminLoginPanel({ change: true }))); } }
     ].concat(ctx.ADMIN_TABS)));
   }
 });

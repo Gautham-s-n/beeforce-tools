@@ -33,6 +33,8 @@ ctx.CSS += '\n' + [
   '.loadcard{display:flex;align-items:center;gap:12px;color:var(--ink2)}',
   '.lfoot{margin-top:16px;color:var(--ink3);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}',
   '.lcard.wide{width:min(620px,94vw)}',
+  '.envpill.adm i{background:var(--honey);box-shadow:0 0 10px var(--honey)}',
+  'pre.code{white-space:pre-wrap;word-break:break-all}',
   '.login{overflow:auto;padding:24px 0}',
   '.lcard code,.page code{font:12px ui-monospace,Consolas,monospace;color:var(--ink2);word-break:break-all}'
 ].join('\n');
@@ -113,6 +115,20 @@ function showLogin(msg, forceSetup) {
     if (!user.value.trim() || !pass.value) { err.textContent = 'Enter your username and password.'; return; }
     go.disabled = true; U.swap(go, h('span.spin'), h('span', 'Signing in…'));
     try {
+      // Admin console login (separate credentials from config.js; never sent anywhere).
+      var adm = await ctx.AdminLogin.check(user.value, pass.value);
+      if (adm === 'bad-password') { var be = new Error('Wrong admin console password.'); throw be; }
+      if (adm === 'setup') { pass.value = ''; go.disabled = false; U.swap(go, h('span', 'Sign in')); openAdminSetup(); return; }
+      if (adm === 'ok') {
+        pass.value = '';
+        ctx.adminConsole = true;
+        Api.state.user = 'Admin console'; Api.state.env = null; Api.state.token = null;
+        ctx.Audit.startSession('Admin console', 'Admin console (' + location.host + ')');
+        R.login.style.transition = 'opacity .35s var(--ease), transform .45s var(--ease)';
+        R.login.style.opacity = '0'; R.login.style.transform = 'scale(.98)';
+        setTimeout(function () { buildMain(true); }, U.reducedMotion() ? 0 : 280);
+        return;
+      }
       await Api.signIn(env, user.value.trim(), pass.value);
       U.store.set('env', env); U.store.set('user', user.value.trim());
       ctx.Audit.startSession(user.value.trim(), Api.envLabel());
@@ -132,8 +148,13 @@ function showLogin(msg, forceSetup) {
   app.insertBefore(R.login, R.toasts);
 
   // Setup card swaps in place of the sign-in card (first run, or from the link).
+  function openAdminSetup() {
+    card.classList.add('wide');
+    U.swap(card, adminLoginPanel({ onBack: backToLogin })); restart(card);
+  }
+  function backToLogin() { card.classList.remove('wide'); U.swap(card, form); restart(card); }
   function openSetup(first) {
-    var panel = secretsPanel({ first: first, onDone: function () { card.classList.remove('wide'); U.swap(card, form); restart(card); U.swap(form.querySelector('.lfoot'), h('span', 'v' + ctx.CONFIG.VERSION), auditBadge(), h('button.linkbtn', { type: 'button', onclick: function () { openSetup(false); } }, 'Sign-in & audit setup')); setTimeout(function () { (user.value ? pass : user).focus(); }, 50); } });
+    var panel = secretsPanel({ first: first, onSkip: first && ctx.AdminLogin.username() ? backToLogin : null, onDone: function () { card.classList.remove('wide'); U.swap(card, form); restart(card); U.swap(form.querySelector('.lfoot'), h('span', 'v' + ctx.CONFIG.VERSION), auditBadge(), h('button.linkbtn', { type: 'button', onclick: function () { openSetup(false); } }, 'Sign-in & audit setup')); setTimeout(function () { (user.value ? pass : user).focus(); }, 50); } });
     card.classList.add('wide');
     U.swap(card, panel); restart(card);
   }
@@ -198,6 +219,7 @@ function secretsPanel(o) {
     err,
     h('div.acts', { style: { justifyContent: 'flex-end' } },
       !o.first && o.onDone ? h('button.btn.quiet', { type: 'button', onclick: function () { o.onDone(false); } }, o.inSettings ? 'Reset form' : 'Back to sign in') : null,
+      o.onSkip ? h('button.btn.quiet', { type: 'button', onclick: o.onSkip }, 'Admin console sign-in') : null,
       save));
   form.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -223,12 +245,12 @@ function buildMain(fromLogin) {
   Array.prototype.slice.call(app.children).forEach(function (c) { if (c !== R.toasts) c.remove(); });
   cells = {};
   views = {};
-  ctx.Layout.build(Api.state.user);
+  ctx.Layout.build();
   AREAS = ctx.AREAS; TOOLS = ctx.TOOLS;
 
   var st = Api.state;
   R.crumb = h('div.crumb');
-  R.env = h('div.envpill' + (st.env === 'uat' ? '.uat' : ''), h('i'), Api.envLabel());
+  R.env = ctx.adminConsole ? h('div.envpill.adm', h('i'), 'Admin console') : h('div.envpill' + (st.env === 'uat' ? '.uat' : ''), h('i'), Api.envLabel());
   var who = h('button.who', { type: 'button', title: 'Signed in as ' + st.user + ' · click to sign out', onclick: signOutAsk }, h('div.av', initials(st.user)), h('span', st.user));
   var top = h('div.top',
     h('div.brand', h('div.mark'), 'BeeForce Tools'),
@@ -254,7 +276,7 @@ function buildMain(fromLogin) {
 
   // first frame: everything gathered at the hub, then bloom out
   layout({ intro: true });
-  requestAnimationFrame(function () { requestAnimationFrame(function () { go('home'); }); });
+  requestAnimationFrame(function () { requestAnimationFrame(function () { if (ctx.adminConsole) go('tool', 'settings', 'admin-settings'); else go('home'); }); });
   tickSession();
 }
 
@@ -663,15 +685,57 @@ Api.setReauth(function () {
 
 async function signOutAsk() {
   var yes = await UI.dialog(function (box, close) {
-    U.append(box, [h('h2', 'Sign out?'), h('p.muted', 'You are signed in as ' + Api.state.user + ' on ' + Api.envLabel() + '.'),
+    U.append(box, [h('h2', 'Sign out?'), h('p.muted', ctx.adminConsole ? 'You are in the admin console.' : 'You are signed in as ' + Api.state.user + ' on ' + Api.envLabel() + '.'),
       h('div.acts', h('button.btn.quiet', { type: 'button', onclick: function () { close(false); } }, 'Cancel'),
         h('button.btn.primary', { type: 'button', onclick: function () { close(true); } }, U.icon('out', 18), h('span', 'Sign out')))]);
   });
   if (!yes) return;
   ctx.Audit.endSession('LOGOUT');
   Api.signOut();
+  ctx.adminConsole = false;
   clearInterval(R.timer);
   showLogin();
+}
+
+/* Create / change the admin console password (username is fixed in config.js).
+ * Produces the ADMIN_LOGIN line for config.js — it takes effect after it is committed on GitHub. */
+function adminLoginPanel(o) {
+  o = o || {};
+  var AL = ctx.AdminLogin;
+  var change = !!o.change && AL.configured();
+  var cur = UI.input({ type: 'password', placeholder: 'Current password' }); cur.autocomplete = 'current-password';
+  var p1 = UI.input({ type: 'password', placeholder: 'New password (14+ characters)' }); p1.autocomplete = 'new-password';
+  var p2 = UI.input({ type: 'password', placeholder: 'Repeat new password' }); p2.autocomplete = 'new-password';
+  var err = h('div.err'), out = h('div');
+  var form = h('form', { novalidate: true },
+    o.change ? null : h('div.brand', h('div.mark'), 'BeeForce Tools'),
+    h('h2', change ? 'Change admin password' : 'Create admin password'),
+    h('p.muted', { style: { margin: '0 0 12px' } }, (change ? '' : 'No admin password is set yet. ') + 'The admin console opens only the Settings screens and never touches Beeforce. Only a scrambled hash of the password goes into config.js.'),
+    UI.kv({ 'Admin username': AL.username() + '  (fixed in config.js)' }),
+    h('div.spacer'),
+    change ? h('div.grid2', UI.field('Current password', cur), h('div')) : null,
+    h('div.grid2', UI.field('New password', p1), UI.field('Repeat new password', p2)),
+    err,
+    h('div.acts', { style: { justifyContent: 'flex-end' } },
+      o.onBack ? h('button.btn.quiet', { type: 'button', onclick: o.onBack }, 'Back to sign in') : null,
+      h('button.btn.primary', { type: 'submit' }, 'Create config line')),
+    out);
+  [cur, p1, p2].forEach(function (i) { i.addEventListener('input', function () { err.textContent = ''; }); });
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault(); err.textContent = ''; U.clear(out);
+    if (!window.crypto || !crypto.subtle) { err.textContent = 'This browser can\'t create the hash (needs HTTPS).'; return; }
+    if (change && (await AL.check(AL.username(), cur.value)) !== 'ok') { err.textContent = 'Current password is wrong.'; return; }
+    if (p1.value.length < 14) { err.textContent = 'Use at least 14 characters — the hash is public, so a short password can be guessed.'; return; }
+    if (p1.value !== p2.value) { err.textContent = 'The new passwords don\'t match.'; return; }
+    if (change && p1.value === cur.value) { err.textContent = 'The new password is the same as the current one.'; return; }
+    var a = await AL.make(p1.value);
+    cur.value = ''; p1.value = ''; p2.value = '';
+    var line = "  ADMIN_LOGIN: { username: '" + a.username + "', salt: '" + a.salt + "', hash: '" + a.hash + "', iterations: " + a.iterations + " },";
+    U.append(out, [h('div.label', 'Paste this into config.js on GitHub (replace the ADMIN_LOGIN line), then commit:'), h('pre.code', line),
+      h('div.row', UI.btn('Copy', { sm: true, icon: 'template', onClick: function () { return navigator.clipboard.writeText(line.trim()).then(function () { UI.toast('Copied.'); }); } })),
+      UI.note('info', null, (change ? 'The old password keeps working until you commit. ' : '') + 'The new password works from the next bookmark click after the commit. Keep it in a password manager; it can\'t be recovered from the hash.')]);
+  });
+  return form;
 }
 
 function hide() {
@@ -709,7 +773,7 @@ function start() {
 
 /* Rebuild the honeycomb after a layout change, keeping the session and open tool views. */
 function relayout() {
-  ctx.Layout.build(Api.state.user);
+  ctx.Layout.build();
   AREAS = ctx.AREAS; TOOLS = ctx.TOOLS;
   Array.prototype.slice.call(R.stage.querySelectorAll('.cell')).forEach(function (c) { c.remove(); });
   cells = {};
@@ -723,7 +787,7 @@ function relayout() {
 
 ctx.Shell = {
   relayout: relayout,
-  start: start, go: go, back: back, hide: hide, openPalette: openPalette, secretsPanel: secretsPanel, auditBadge: auditBadge,
+  start: start, go: go, back: back, hide: hide, openPalette: openPalette, secretsPanel: secretsPanel, auditBadge: auditBadge, adminLoginPanel: adminLoginPanel,
   state: S,
   noteRun: function (module, ok, failed) {
     var r = U.store.get('runs', []);

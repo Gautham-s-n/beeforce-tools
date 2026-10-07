@@ -13,11 +13,10 @@ ctx.CONFIG = {
   // on the setup screen and kept in that browser only (see core/secrets.js).
   OAUTH_CLIENT_ID: 'admin-client',
 
-  // Beeforce usernames that see the Settings area (layout, sign-in & audit setup, endpoints).
-  // UI access only — not a security boundary. Never put passwords or secrets here.
-  ADMIN_USERS: [
-    'replace.with.beeforce.username'
-  ],
+  // Admin console login: fixed username + a password that opens only the Settings screens (no Beeforce sign-in).
+  // First time: sign in with this username and any password → "Create admin password" → paste the generated line
+  // here (replacing this one) and commit. Change it later in Admin Settings → Admin login. Only a hash is stored.
+  ADMIN_LOGIN: { username: 'bft.admin', salt: null, hash: null, iterations: 210000 },
 
   // Session length shown in the session ring (minutes).
   TOKEN_VALIDITY_MIN: 120,

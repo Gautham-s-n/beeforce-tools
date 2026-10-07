@@ -23,6 +23,12 @@
   (cmpcalls.py baseline final); Admin Settings → API endpoints (Postman v2.1 import, auto-map, red missing, edit, save,
   endpoints.json export, Postman export, reset). Test: t_endpoints.py. Dead code removed: Engine.policySet, Api.employeeId.
 
+## Admin console (2026-10-07)
+- ADMIN_USERS replaced: users sign in with per-client Beeforce admin accounts, so a username list can't single out people.
+  Admin console login: fixed username bft.admin in config.js ADMIN_LOGIN + PBKDF2 hash (210k) of the password; opens only
+  Settings, no Beeforce call. First login without hash → create-password screen; Admin Settings → Admin password to change.
+  Tests: t_layout.py, t_endpoints.py, t_adminlogin.py (rig.py injects a test ADMIN_LOGIN: bt-console / correct horse battery staple).
+
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).
 - Workflow transfer: "replace" column now really sent (old always sent false because of a header typo).
@@ -30,7 +36,7 @@
 - Kept from old tool (flagged, not changed): paycode-event updates reset schedule startDate to 2026-01-01; child entries are re-created without ids.
 
 ## Waiting on the user
-1. Put real Beeforce usernames in ADMIN_USERS (config.js). Rotate the old client secret + Chat webhook (they were in the gist).
+1. Sign in as bft.admin → create the admin password → commit the ADMIN_LOGIN line. Rotate the old client secret + Chat webhook (they were in the gist).
 2. Hosting: a GitHub repo raw URL for loader.js BASE (gists cannot hold the core/ and modules/ folders).
 3. First run on real UAT. The mocks are built from the old code, so real response shapes may need small fixes.
 

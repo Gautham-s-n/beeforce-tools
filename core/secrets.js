@@ -77,3 +77,36 @@ var Secrets = {
 };
 
 ctx.Secrets = Secrets;
+
+/* ---- Admin console login (bypasses Beeforce sign-in; opens only the Settings screens) ----
+ * config.js ADMIN_LOGIN = { username, salt, hash, iterations }. The username is fixed in config.js; the password is
+ * stored only as PBKDF2-SHA-256(username + password). A new password = a new line committed to config.js.
+ * Runs in the browser and the config is public: this keeps casual users out; it is not server-side security.
+ * Use a long password (14+ characters) so the public hash can't practically be guessed. */
+function hex(buf) { return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+function unhex(s) { var a = new Uint8Array(s.length / 2); for (var i = 0; i < a.length; i++) a[i] = parseInt(s.substr(i * 2, 2), 16); return a; }
+var enc = new TextEncoder();
+function norm(u) { return String(u || '').trim().toLowerCase(); }
+async function pbkdf2(salt, user, pass, iter) {
+  var key = await crypto.subtle.importKey('raw', enc.encode(norm(user) + '\n' + pass), 'PBKDF2', false, ['deriveBits']);
+  return hex(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: unhex(salt), iterations: iter }, key, 256));
+}
+function cfg() { return ctx.CONFIG.ADMIN_LOGIN || {}; }
+ctx.AdminLogin = {
+  username: function () { return cfg().username || ''; },
+  isAdminUser: function (u) { return !!cfg().username && norm(u) === norm(cfg().username); },
+  configured: function () { var a = cfg(); return !!(a.username && a.salt && a.hash && a.iterations); },
+  /* 'no' (not the admin username) | 'setup' (admin username, no password yet) | 'ok' | 'bad-password'
+   * Admin-username attempts are never sent to Beeforce. */
+  check: async function (user, pass) {
+    if (!this.isAdminUser(user)) return 'no';
+    if (!this.configured()) return 'setup';
+    if (!window.crypto || !crypto.subtle) return 'bad-password';
+    var a = cfg();
+    return (await pbkdf2(a.salt, a.username, pass, a.iterations)) === a.hash ? 'ok' : 'bad-password';
+  },
+  make: async function (pass) {
+    var salt = hex(crypto.getRandomValues(new Uint8Array(16))), iter = 210000, u = cfg().username;
+    return { username: u, salt: salt, hash: await pbkdf2(salt, u, pass, iter), iterations: iter };
+  }
+};
