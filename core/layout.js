@@ -11,7 +11,7 @@
  * A tool listed in an area's `tools` is moved there (removed from any other area).
  * Tools can only be placed, renamed or hidden — a tool needs its modules/<id>.js file to work.
  *
- * Admin access is a convenience gate for the UI, not a security boundary (everything runs in the page). */
+ * The Settings area exists only in the admin console (separate admin login, see core/secrets.js). */
 'use strict';
 
 var LKEY = 'bft.layout';
@@ -118,15 +118,13 @@ function unplaced(model) {
   return Object.keys(model.tools).filter(function (t) { return !placed[t]; });
 }
 
-function isAdmin(user) {
-  var u = String(user || (ctx.Api && ctx.Api.state.user) || '').trim().toLowerCase();
-  return !!u && (ctx.CONFIG.ADMIN_USERS || []).some(function (a) { return String(a).trim().toLowerCase() === u; });
-}
+// Admin = signed in through the admin console login (core/secrets.js AdminLogin), not a Beeforce account.
+function isAdmin() { return !!ctx.adminConsole; }
 
 /* Builds ctx.AREAS / ctx.TOOLS for the shell. AREAS holds visible areas only; each has
  * `tools` (visible) and `allTools` (incl. hidden, reachable from Ctrl+K for admins). */
-function build(user) {
-  var admin = isAdmin(user);
+function build() {
+  var admin = isAdmin();
   var m = effective();
   var problems = validate(m);
   if (problems.length) { console.warn('[BeeForce Tools] layout problems, using team layout instead:', problems); m = base(); if (validate(m).length) m = defaultsModel(); }
@@ -136,8 +134,9 @@ function build(user) {
     return { id: a.id, name: a.name, icon: a.icon, desc: a.desc, tools: a.tools.filter(function (t) { return !TOOLS[t].hidden; }), allTools: a.tools.slice() };
   });
   if (admin) {
-    TOOLS['admin-settings'] = clone(SETTINGS_TOOL);
-    AREAS.push({ id: SETTINGS.id, name: SETTINGS.name, icon: SETTINGS.icon, desc: SETTINGS.desc, tools: ['admin-settings'], allTools: ['admin-settings'], system: true });
+    // Admin console: only the Settings area (no Beeforce token, so the tools can't run).
+    TOOLS = { 'admin-settings': clone(SETTINGS_TOOL) };
+    AREAS = [{ id: SETTINGS.id, name: SETTINGS.name, icon: SETTINGS.icon, desc: SETTINGS.desc, tools: ['admin-settings'], allTools: ['admin-settings'], system: true }];
   }
   ctx.AREAS = AREAS; ctx.TOOLS = TOOLS;
   return { areas: AREAS, tools: TOOLS, admin: admin };
@@ -160,4 +159,4 @@ ctx.Layout = {
   clearLocal: function () { try { localStorage.removeItem(LKEY); } catch (e) {} },
   exportRepo: function (model) { return diff(defaultsModel(), model); }  // layout.json for the team
 };
-build(null);
+build();

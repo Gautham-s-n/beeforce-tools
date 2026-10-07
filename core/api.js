@@ -79,6 +79,7 @@ function setReauth(fn) { reauth = fn; }
  */
 async function call(method, path, opts) {
   opts = opts || {};
+  if (!state.base || !state.token) return { ok: false, status: 0, data: null, text: 'Not signed in to Beeforce.' };
   var url = new URL(/^https?:/.test(path) ? path : state.base + path);
   // Never send the Beeforce token anywhere except the signed-in environment.
   if (url.origin !== new URL(state.base).origin) return { ok: false, status: 0, data: null, text: 'Blocked: ' + url.origin + ' is not the signed-in Beeforce environment.' };
