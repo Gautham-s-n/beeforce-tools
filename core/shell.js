@@ -124,8 +124,8 @@ ctx.CSS += '\n' + [
   '.dock:hover .dlabel,.dock .dhex:focus-visible+.dlabel{opacity:1;transform:none}',
   '.dock.left .dlabel{right:auto;left:68px;transform:translateX(-8px)}',
   '.dock.low .dhex>span b{color:#B4232F}',
-  /* Lightbox: a soft sky-blue light behind the honeycomb glides after the pointer; the gaps glow around it */
-  '.backlight{position:absolute;left:0;top:0;width:520px;height:520px;margin:-260px 0 0 -260px;border-radius:50%;z-index:4;pointer-events:none;opacity:0;transition:opacity .5s var(--ease);background:radial-gradient(circle,var(--blcore) 0%,var(--blmid) 38%,transparent 66%);will-change:transform}',
+  /* Lightbox: a soft sky-blue light behind the hovered hexagon; the gaps around it glow */
+  '.backlight{position:absolute;left:0;top:0;width:520px;height:520px;margin:-260px 0 0 -260px;border-radius:50%;z-index:4;pointer-events:none;opacity:0;transition:opacity .3s var(--ease),transform .25s var(--ease);background:radial-gradient(circle,var(--blcore) 0%,var(--blmid) 38%,transparent 66%);will-change:transform}',
   '.backlight.on{opacity:1}',
   /* arrange mode */
   '.arrbtn[aria-pressed=true]{background:var(--honeybg);color:var(--honey);border-color:var(--honey)}',
@@ -579,7 +579,10 @@ function mkCell(id, cls, content, onClick, label, size) {
   c.addEventListener('click', function (e) { if (R.justDragged) return; if (!c.classList.contains('gone')) onClick && onClick(e); });
   c.addEventListener('pointerdown', function (e) { if (S.arrange) dragStart(e, c); });
   c.addEventListener('mousemove', function (e) { tilt(c, e); });
-  c.addEventListener('mouseleave', function () { untilt(c); });
+  c.addEventListener('mouseenter', function () { lightFor(c); });
+  c.addEventListener('mouseleave', function () { untilt(c); lightOff(c); });
+  c.addEventListener('focus', function () { if (c.matches(':focus-visible')) lightFor(c); });
+  c.addEventListener('blur', function () { lightOff(c); });
   cells[id] = c;
   R.stage.appendChild(c);
   return c;
@@ -810,6 +813,7 @@ function setArrange(on, quiet) {
   hidePeek(); hideTip();
   Object.keys(cells).forEach(function (k) { untilt(cells[k]); });
   R.stage.classList.toggle('arranging', S.arrange);
+  lightShow();
   if (R.arrBtn) R.arrBtn.setAttribute('aria-pressed', S.arrange ? 'true' : 'false');
   layout();
   drawArrangeBar();
@@ -950,30 +954,30 @@ function downloadTeamLayout() {
 }
 
 /* ---------------- Lightbox (backlight) ----------------
- * One light behind the comb: it eases toward the pointer (rAF only while it is still moving). Shown on the module
- * page, the honeycomb and an open area; hidden on tool pages and in gallery / cards / list views. */
-var LB = { x: 0, y: 0, tx: 0, ty: 0, run: false, inside: false };
-function lightWanted() { return !!R.light && LB.inside && (S.level === 'modules' || S.level === 'area' || (S.level === 'home' && S.view === 'honeycomb')); }
-function lightShow() { if (R.light) R.light.classList.toggle('on', lightWanted()); }
-function lightTick() {
-  var dx = LB.tx - LB.x, dy = LB.ty - LB.y;
-  LB.x += dx * 0.12; LB.y += dy * 0.12;
-  if (Math.abs(dx) + Math.abs(dy) < 0.5) { LB.x = LB.tx; LB.y = LB.ty; }
-  R.light.style.transform = 'translate(' + LB.x.toFixed(1) + 'px,' + LB.y.toFixed(1) + 'px)';
-  if (LB.x === LB.tx && LB.y === LB.ty) { LB.run = false; return; }
-  requestAnimationFrame(lightTick);
+ * A soft sky-blue light switches on behind the hexagon under the pointer (or keyboard focus) and fades out when you
+ * leave it. It sits behind the cells, so it shows as a glow through the gaps around that hexagon. It does not follow
+ * the pointer anywhere else. */
+var LB = { cell: null, x: null, y: null, timer: null };
+function lightFor(c) {
+  if (!R.light || !c || S.arrange || c.classList.contains('gone') || c.classList.contains('mini') || (c.classList.contains('ghost') && !c.classList.contains('back'))) return;
+  if (S.level === 'tool' || ctx.appEl.classList.contains('min')) return;
+  clearTimeout(LB.timer);
+  var r = c.getBoundingClientRect(), b = R.body.getBoundingClientRect();
+  var x = r.left - b.left + r.width / 2, y = r.top - b.top + r.height / 2, k = (r.width * 2.7 / 520).toFixed(3);
+  // first light of a visit appears in place; moving to a neighbour slides it over quickly
+  if (!R.light.classList.contains('on')) { R.light.style.transition = 'none'; R.light.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + k + ')'; void R.light.offsetWidth; R.light.style.transition = ''; }
+  R.light.style.transform = 'translate(' + x + 'px,' + y + 'px) scale(' + k + ')';
+  R.light.classList.add('on');
+  LB.cell = c;
 }
-function wireLight() {
-  var b = R.body;
-  b.addEventListener('pointermove', function (e) {
-    var r = b.getBoundingClientRect();
-    LB.tx = e.clientX - r.left; LB.ty = e.clientY - r.top;
-    if (!LB.inside) { LB.inside = true; if (!R.light.classList.contains('on')) { LB.x = LB.tx; LB.y = LB.ty; } lightShow(); }
-    if (U.reducedMotion()) { LB.x = LB.tx; LB.y = LB.ty; R.light.style.transform = 'translate(' + LB.x + 'px,' + LB.y + 'px)'; return; }
-    if (!LB.run) { LB.run = true; requestAnimationFrame(lightTick); }
-  });
-  b.addEventListener('pointerleave', function () { LB.inside = false; lightShow(); });
+function lightOff(c) {
+  if (!R.light || (c && LB.cell !== c)) return;
+  clearTimeout(LB.timer);
+  LB.timer = setTimeout(function () { R.light.classList.remove('on'); LB.cell = null; }, 60);
 }
+// Navigation moves the cells away, so the light goes out; it comes back on the next hover.
+function lightShow() { if (R.light) { clearTimeout(LB.timer); R.light.classList.remove('on'); LB.cell = null; } }
+function wireLight() {}
 
 /* ---------------- liquid motion + hover tilt ---------------- */
 var Goo = { v: 0, t: 0, run: false, timer: null };

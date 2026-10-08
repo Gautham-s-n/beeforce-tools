@@ -86,6 +86,8 @@
   toward the pointer with rAF only while moving (wireLight / lightTick); shown on modules / honeycomb / area, hidden on
   tools and gallery views; reduced motion = no easing. Hover honey edge unchanged. Mocks: design3/e_backlit*.html.
 - Test: t_light.py. All suites pass; tool request logs identical to v3.1.
+- v3.6.1: user didn't want the light following the cursor → light only behind the hovered / keyboard-focused hexagon
+  (lightFor / lightOff on cell enter/leave/focus; off on navigation and in arrange mode). No pointer tracking.
 
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).

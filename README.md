@@ -1,4 +1,4 @@
-# APIary (v3.6)
+# APIary (v3.6.1)
 
 APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
@@ -62,8 +62,8 @@ session; clicking the bookmark again in that session goes straight back to your 
 - **Keyboard:** arrow keys move between hexagons, `Enter` opens, `Esc` goes back one level (tool → area → module →
   module page), `Ctrl K` searches.
 - **Motion:** cells flow like liquid while they move and settle into crisp hexagons; the one under the pointer tilts
-  toward you and gets a honey edge. A soft sky-blue light behind the honeycomb ("Lightbox") glides after the pointer,
-  so the gaps glow where you point (module page, honeycomb and areas; not on tool pages or list views). Turning on "reduce motion" in Windows / macOS turns these effects off.
+  toward you, gets a honey edge, and a soft sky-blue light switches on behind it so the gaps around it glow
+  ("Lightbox"). The light only appears on hovered (or keyboard-focused) hexagons; it never follows the pointer. Turning on "reduce motion" in Windows / macOS turns these effects off.
 - **Views** (top bar): Honeycomb (default), Gallery, Cards, List. The last one you pick is remembered in this browser.
 - **Theme** (moon / sun icon): dark, light, or follow your system. Remembered in this browser.
 
