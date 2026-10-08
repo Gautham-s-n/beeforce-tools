@@ -7,6 +7,10 @@
  * → this browser (localStorage 'bft.endpoints'). Query parameters stay in code (DEFAULTS[key].query),
  * because they are part of how each tool reads data, not where the API lives.
  *
+ * Override entry: { method, path, off? }. off: true is allowed only for optional entries (required: false); the tool
+ * then behaves as if that call failed (lookups / checks are skipped). Calls a tool can't work without can be changed or
+ * reset, never switched off.
+ *
  * Entry: { tool, label, method, path, query?, required? }
  *   path placeholders: {id}, {name}… filled from params (URL-encoded); a missing param is an error.
  *   Trailing slashes are deliberate — some Beeforce routes need them, some must not have them. Keep them exact.
@@ -176,17 +180,25 @@ function check(method, path, def) {
 
 function layer(o, key) { var e = overridesOf(o)[key]; return e && e.method && e.path && !check(e.method, e.path, DEFAULTS[key]).length ? e : null; }
 
+function canOff(key) { return !!DEFAULTS[key] && DEFAULTS[key].required === false; }
+
+/* Team layer (built-in + endpoints.json) for one key — what "Reset" goes back to. */
+function teamOf(key) {
+  var d = DEFAULTS[key], r = layer(ctx.repoEndpoints, key);
+  return { method: r ? r.method.toUpperCase() : d.method, path: r ? r.path : d.path, off: !!(r && r.off && canOff(key)), source: r ? 'team' : 'built-in' };
+}
+
 function get(key) {
   var d = DEFAULTS[key];
   if (!d) throw new Error('Unknown endpoint "' + key + '" (add it to core/endpoints.js)');
   var e = Object.assign({}, d);
-  var r = layer(ctx.repoEndpoints, key), l = layer(readLocal(), key);
-  if (r) { e.method = r.method.toUpperCase(); e.path = r.path; e.source = 'team'; }
-  if (l) { e.method = l.method.toUpperCase(); e.path = l.path; e.source = 'browser'; }
-  if (!e.source) e.source = 'built-in';
+  var t = teamOf(key), l = layer(readLocal(), key);
+  e.method = t.method; e.path = t.path; e.off = t.off; e.source = t.source;
+  if (l) { e.method = l.method.toUpperCase(); e.path = l.path; e.off = !!(l.off && canOff(key)); e.source = 'browser'; }
   e.key = key;
   return e;
 }
+var OFF_TEXT = 'Turned off in Admin Settings → API endpoints.';
 
 function fill(path, params, key) {
   return path.replace(/\{([a-zA-Z]+)\}/g, function (m, k) {
@@ -204,6 +216,7 @@ ctx.EP = {
   /* Api.call with the registry's method + path; opts.query is merged over the default query. */
   call: function (key, params, opts) {
     var e = get(key);
+    if (e.off) return Promise.resolve({ ok: false, status: 0, data: null, text: OFF_TEXT, off: true });
     opts = Object.assign({}, opts || {});
     if (e.query) opts.query = Object.assign({}, e.query, opts.query || {});
     return ctx.Api.call(e.method, fill(e.path, params, key), opts);
@@ -213,6 +226,7 @@ ctx.EP = {
     opts = Object.assign({}, opts || {});
     if (e.query) opts.query = Object.assign({}, e.query, opts.query || {});
     if (e.method !== 'GET') throw new Error(key + ' is not a GET endpoint');
+    if (e.off) return Promise.reject(new Error(e.label + ': ' + OFF_TEXT));
     return ctx.Api.list(fill(e.path, params, key), opts);
   },
   listQuiet: function (key, params, opts) { return this.list(key, params, opts).catch(function () { return []; }); },
@@ -226,11 +240,16 @@ ctx.EP = {
   /* cURL text. The token is a placeholder unless withToken is true (that makes the text a live key). */
   curl: function (key, params, o) {
     o = o || {};
-    var e = get(key), sq = function (v) { return "'" + String(v).replace(/'/g, "'\\''") + "'"; };
-    var tok = o.withToken && ctx.Api.state.token ? ctx.Api.state.token : '$BEEFORCE_TOKEN';
-    var lines = ['curl -X ' + e.method + ' ' + sq(this.url(key, params, o.query)),
-      '  -H ' + (o.withToken && ctx.Api.state.token ? sq('Authorization: Bearer ' + tok) : '"Authorization: Bearer $BEEFORCE_TOKEN"'), '  -H ' + sq('Accept: application/json'), '  -H ' + sq('X-Client-Type: Web')];
-    if (e.method !== 'GET' && e.method !== 'DELETE') { lines.push('  -H ' + sq('Content-Type: application/json')); lines.push('  --data ' + sq(o.body ? JSON.stringify(o.body, null, 2) : '{}')); }
+    return this.curlRaw(get(key).method, this.url(key, params, o.query), o);
+  },
+  /* cURL for any method + full URL (custom requests in the API explorer). */
+  curlRaw: function (method, url, o) {
+    o = o || {};
+    var sq = function (v) { return "'" + String(v).replace(/'/g, "'\\''") + "'"; };
+    var live = o.withToken && ctx.Api.state.token;
+    var lines = ['curl -X ' + method + ' ' + sq(url),
+      '  -H ' + (live ? sq('Authorization: Bearer ' + ctx.Api.state.token) : '"Authorization: Bearer $BEEFORCE_TOKEN"'), '  -H ' + sq('Accept: application/json'), '  -H ' + sq('X-Client-Type: Web')];
+    if (method !== 'GET' && method !== 'DELETE') { lines.push('  -H ' + sq('Content-Type: application/json')); lines.push('  --data ' + sq(o.body ? JSON.stringify(o.body, null, 2) : '{}')); }
     return lines.join(' \\\n');
   },
   /* Postman collection v2.1 for a list of entries (default: all), grouped by tool. */
@@ -254,16 +273,19 @@ ctx.EP = {
   keys: function () { return Object.keys(DEFAULTS); },
   all: function () { return Object.keys(DEFAULTS).map(get); },
   local: readLocal,
-  /* overrides: { key: { method, path } } — only entries that differ from team/built-in are kept. */
+  canOff: canOff,
+  team: teamOf,
+  /* overrides: { key: { method, path, off? } } — only entries that differ from team/built-in are kept.
+   * A missing `off` keeps the current on/off state. */
   saveLocal: function (map) {
     var out = {};
     Object.keys(map || {}).forEach(function (k) {
       if (!DEFAULTS[k]) return;
       var m = String(map[k].method).toUpperCase(), p = String(map[k].path).trim();
       if (check(m, p, DEFAULTS[k]).length) return;
-      var base = Object.assign({}, DEFAULTS[k]), r = layer(ctx.repoEndpoints, k);
-      if (r) { base.method = r.method.toUpperCase(); base.path = r.path; }
-      if (base.method !== m || base.path !== p) out[k] = { method: m, path: p };
+      var off = canOff(k) && (map[k].off == null ? get(k).off : !!map[k].off);
+      var base = teamOf(k);
+      if (base.method !== m || base.path !== p || base.off !== off) out[k] = off ? { method: m, path: p, off: true } : { method: m, path: p };
     });
     try {
       if (Object.keys(out).length) localStorage.setItem(LKEY, JSON.stringify({ version: 1, endpoints: out }));
@@ -272,13 +294,37 @@ ctx.EP = {
     return Object.keys(out).length;
   },
   clearLocal: function () { try { localStorage.removeItem(LKEY); } catch (e) {} },
+  /* Change one endpoint in this browser ({ method?, path?, off? }); returns problems (empty = saved). */
+  setOne: function (key, change) {
+    var cur = get(key), next = { method: String(change.method || cur.method).toUpperCase(), path: String(change.path == null ? cur.path : change.path).trim(), off: change.off == null ? cur.off : !!change.off };
+    var errs = check(next.method, next.path, DEFAULTS[key]);
+    if (next.off && !canOff(key)) errs.push('This call is required by the tool, so it can be changed but not turned off.');
+    if (errs.length) return errs;
+    var map = {};
+    var loc = overridesOf(readLocal());
+    Object.keys(loc).forEach(function (k) { if (DEFAULTS[k]) { var g = get(k); map[k] = { method: g.method, path: g.path, off: g.off }; } });
+    map[key] = next;
+    this.saveLocal(map);
+    return [];
+  },
+  /* Drop this browser's change for one endpoint (back to the team file / built-in). */
+  resetOne: function (key) {
+    var o = readLocal(), eps = overridesOf(o);
+    if (!eps[key]) return false;
+    delete eps[key];
+    try {
+      if (Object.keys(eps).length) localStorage.setItem(LKEY, JSON.stringify({ version: 1, endpoints: eps }));
+      else localStorage.removeItem(LKEY);
+    } catch (e) { throw new Error('This browser blocked saving: ' + e.message); }
+    return true;
+  },
   /* endpoints.json for the team: every entry that differs from the built-in defaults. */
   exportRepo: function (map) {
     var out = {};
     Object.keys(DEFAULTS).forEach(function (k) {
-      var cur = map && map[k] ? map[k] : get(k);
-      var m = String(cur.method).toUpperCase(), p = String(cur.path);
-      if (m !== DEFAULTS[k].method || p !== DEFAULTS[k].path) out[k] = { method: m, path: p };
+      var g = get(k), cur = map && map[k] ? map[k] : g;
+      var m = String(cur.method).toUpperCase(), p = String(cur.path), off = canOff(k) && (cur.off == null ? g.off : !!cur.off);
+      if (m !== DEFAULTS[k].method || p !== DEFAULTS[k].path || off) out[k] = off ? { method: m, path: p, off: true } : { method: m, path: p };
     });
     return { version: 1, endpoints: out };
   }

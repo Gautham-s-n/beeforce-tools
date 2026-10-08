@@ -426,7 +426,12 @@ function buildMain(fromLogin) {
   // After sign-in: the module page. Re-opening the bookmark in the same session goes straight back to the module.
   var live = (ctx.MODULES || []).some(function (m) { return m.id === S.module; });
   var toModules = fromLogin && !ctx.adminConsole && (ctx.MODULE_LIST || []).length > 0 && !(U.store.get('skipModules', false) && live);
-  requestAnimationFrame(function () { requestAnimationFrame(function () { if (ctx.adminConsole) go('tool', 'settings', 'admin-settings'); else go(toModules ? 'modules' : 'home'); }); });
+  var then = R.afterBuild; R.afterBuild = null;
+  requestAnimationFrame(function () { requestAnimationFrame(function () {
+    if (ctx.adminConsole) go('tool', 'settings', 'admin-settings');
+    else if (then) go.apply(null, then);
+    else go(toModules ? 'modules' : 'home');
+  }); });
   tickSession();
 }
 
@@ -785,6 +790,18 @@ function unlockAdmin() {
     });
     box.appendChild(f);
   });
+}
+/* Admin console → signed in to Beeforce from the API explorer: becomes a normal session with admin tools unlocked,
+ * reopened on Admin Settings → API explorer. (Api.signIn has already stored the token.) */
+function adminToBeeforce() {
+  ctx.Audit.endSession('SWITCH');
+  ctx.Audit.startSession(Api.state.user + ' (admin)', Api.envLabel());
+  ctx.adminConsole = false; ctx.adminUnlocked = true;
+  try { sessionStorage.setItem('bft.adminUnlock', '1'); } catch (x) {}
+  ctx.ADMIN_TAB = 'explorer';
+  R.afterBuild = ['tool', 'settings', 'admin-settings'];
+  UI.toast('Signed in to ' + Api.envLabel() + ' as ' + Api.state.user + '. Admin tools stay unlocked.');
+  buildMain(false);
 }
 function lockAdmin() {
   ctx.adminUnlocked = false;
@@ -1240,7 +1257,7 @@ function relayout() {
 }
 
 ctx.Shell = {
-  relayout: relayout, switchModule: switchModule, setView: setView, chooseModule: chooseModule,
+  relayout: relayout, switchModule: switchModule, setView: setView, chooseModule: chooseModule, adminToBeeforce: adminToBeeforce,
   start: start, go: go, back: back, hide: hide, openPalette: openPalette, secretsPanel: secretsPanel, auditBadge: auditBadge, adminLoginPanel: adminLoginPanel,
   state: S,
   noteRun: function (module, ok, failed) {

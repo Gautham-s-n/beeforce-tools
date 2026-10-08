@@ -86,7 +86,7 @@ var Audit = {
   endSession: function (reason) {
     if (!this.active()) return;
     S.logoutTime = Date.now();
-    var label = reason === 'TOKEN_EXPIRED' ? '⚠️ TOKEN EXPIRED' : reason === 'TIMEOUT' ? '⏳ SESSION TIMEOUT' : '🔴 LOGOUT';
+    var label = reason === 'TOKEN_EXPIRED' ? '⚠️ TOKEN EXPIRED' : reason === 'TIMEOUT' ? '⏳ SESSION TIMEOUT' : reason === 'SWITCH' ? '🔁 ADMIN CONSOLE → BEEFORCE SIGN-IN' : '🔴 LOGOUT';
     sendChunked(summary(label));
     reset();
   },

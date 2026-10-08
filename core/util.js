@@ -84,6 +84,8 @@ var ICONS = {
   cards: '<rect x="3.5" y="4" width="7.5" height="7" rx="1.5"/><rect x="13" y="4" width="7.5" height="7" rx="1.5"/><rect x="3.5" y="13" width="7.5" height="7" rx="1.5"/><rect x="13" y="13" width="7.5" height="7" rx="1.5"/>',
   hexgrid: '<path d="M7 3.5 10.5 5.5v4L7 11.5 3.5 9.5v-4L7 3.5ZM17 3.5l3.5 2v4l-3.5 2-3.5-2v-4l3.5-2ZM12 12.5l3.5 2v4l-3.5 2-3.5-2v-4l3.5-2Z"/>',
   chev: '<path d="m6 9 6 6 6-6"/>',
+  edit: '<path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L8 18l-4 1 1-4Z"/><path d="M14 6l3 3"/>',
+  power: '<path d="M12 3v9"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>',
   copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>',
   unlock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 6.8-1.2"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>'

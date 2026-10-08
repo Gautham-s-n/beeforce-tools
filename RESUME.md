@@ -53,6 +53,16 @@
   it is live). Arrow keys move focus to the nearest hexagon in that direction (arrowNav), Enter opens, Esc on the module
   comb → module page. Hint shown on the module page and in the home pane. Test: t_keys.py.
 
+## v3.3 (2026-10-08) — API console
+- core/endpoints.js: overrides may carry off:true (optional entries only) → EP.call returns {ok:false, off:true} without
+  a request, EP.list rejects (listQuiet → []). EP.setOne / resetOne / team / canOff / curlRaw. endpoints.json keeps off.
+- modules/dev-panel.js rewritten as the API console: endpointCard (edit / reset / turn off / send GET / all pages /
+  part picker / JSON-Excel-CSV / cURL / Postman), customCard (any /api/ path, same-origin only), explorer (Admin Settings
+  tab "API explorer": search, tool + kind filters, Postman / cURL script / endpoints.json of what's shown).
+- Admin console → "Sign in to Beeforce" in the explorer → Shell.adminToBeeforce(): audit SWITCH, normal session with
+  admin unlocked, reopens on Settings → API explorer.
+- Tests: t_api.py (new); t_dev.py labels updated. All suites pass; tool request logs identical to v3.1.
+
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).
 - Workflow transfer: "replace" column now really sent (old always sent false because of a header typo).

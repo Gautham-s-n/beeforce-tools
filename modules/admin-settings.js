@@ -1,21 +1,24 @@
 /* modules/admin-settings.js — Admin Settings (Settings area, admins only).
- * Tabs: Honeycomb layout · Sign-in & audit · API endpoints (registry editor + Postman importer).
- * No Beeforce API calls; everything here is stored in this browser or exported as files for the repo. */
+ * Tabs: Honeycomb layout · Sign-in & audit · API endpoints (registry editor + Postman importer) · API explorer
+ * (modules/dev-panel.js: edit / turn off / send GET / download, any Beeforce path) · Admin password.
+ * Only the API explorer calls Beeforce (GET only); everything else is stored in this browser or exported as files. */
 'use strict';
 var U = ctx.U, h = U.h, UI = ctx.UI, L = ctx.Layout;
 
 ctx.ADMIN_TABS = ctx.ADMIN_TABS || [];   // other core parts can add tabs: { id, label, render(el) }
 
 ctx.defineTool('admin-settings', {
-  desc: 'Arrange the honeycomb, set this browser’s sign-in client and audit webhook, and manage API endpoints.',
+  desc: 'Arrange the honeycomb, set this browser’s sign-in client and audit webhook, and manage, test and download API endpoints.',
   render: function (body) {
     if (!L.isAdmin()) { body.appendChild(UI.note('bad', 'Admins only', 'Open Admin Settings from the admin console login.')); return; }
+    var first = ctx.ADMIN_TAB; ctx.ADMIN_TAB = null;   // e.g. reopen on the API explorer after signing in to Beeforce
     body.appendChild(UI.tabs([
       { id: 'layout', label: 'Layout', render: layoutTab },
       { id: 'secrets', label: 'Sign-in & audit', render: secretsTab },
       { id: 'endpoints', label: 'API endpoints', render: endpointsTab },
+      { id: 'explorer', label: 'API explorer', render: function (el) { return ctx.loadTool('dev-panel').then(function (d) { d.explorer(el); }); } },
       { id: 'admin', label: 'Admin password', render: function (el) { el.appendChild(h('div.card', ctx.Shell.adminLoginPanel({ change: true }))); } }
-    ].concat(ctx.ADMIN_TABS)));
+    ].concat(ctx.ADMIN_TABS), first));
   }
 });
 
@@ -479,6 +482,7 @@ function endpointsTab(el) {
     var s = state[key], e = EP.DEFAULTS[key];
     var errs = EP.check(s.method, s.path, e);
     if (errs.length) return { kind: 'bad', chip: 'Invalid', msg: errs.join(' · ') };
+    if (!mapped && EP.get(key).off) return { kind: 'upd', chip: 'Turned off', msg: 'Optional call switched off — turn it on in the API explorer.' };
     if (!mapped) return { kind: s.source === 'built-in' ? '' : 'upd', chip: s.source === 'built-in' ? 'Built-in' : s.source === 'team' ? 'Team file' : 'This browser', msg: '' };
     var m = s.match;
     if (!m) return e.required === false ? { kind: '', chip: 'Optional', msg: 'Not in the file (optional call — current URL kept)' }
@@ -515,7 +519,7 @@ function endpointsTab(el) {
     }));
     U.swap(root,
       h('div.row', { style: { marginBottom: '8px' } },
-        h('span.muted.small', { style: { flex: '1 1 320px' } }, 'Built-in → team file endpoints.json (' + Object.keys((ctx.repoEndpoints || {}).endpoints || {}).length + ') → this browser (' + Object.keys((EP.local() || {}).endpoints || {}).length + '). Method and path only; query parameters stay in each tool.'),
+        h('span.muted.small', { style: { flex: '1 1 320px' } }, 'Built-in → team file endpoints.json (' + Object.keys((ctx.repoEndpoints || {}).endpoints || {}).length + ') → this browser (' + Object.keys((EP.local() || {}).endpoints || {}).length + '). Method and path only; query parameters stay in each tool. To test, turn off or download one endpoint, use the API explorer tab.'),
         h('div.acts',
           UI.btn('Import Postman collection', { sm: true, icon: 'upload', onClick: function () { fileIn.click(); } }),
           UI.btn('Download endpoints.json', { sm: true, icon: 'download', kind: 'quiet', onClick: function () { saveJson('endpoints.json', EP.exportRepo(current())); UI.toast('endpoints.json downloaded. Commit it next to index.js for the whole team.'); } }),

@@ -1,4 +1,4 @@
-# APIary (v3.2)
+# APIary (v3.3)
 
 APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
@@ -67,9 +67,20 @@ Normal Beeforce logins never see Settings.
 - To rename the admin user, edit `username` in that line (then create a new password, since the hash includes it).
 
 **Inside a normal Beeforce session** an admin can open the user menu (your name, top right) → **Unlock admin tools**
-with the same password. That adds the Settings area and a **Developer** button on every tool: its endpoints, a
-"Send GET" button with the response body, **Copy cURL** (token hidden as `$BEEFORCE_TOKEN`; "cURL with token" asks
-first) and a Postman download. Writes are never sent from the Developer panel. Unlock lasts until sign-out or tab close.
+with the same password. That adds the Settings area and a **Developer** button on every tool. Unlock lasts until
+sign-out or tab close. **From the admin console** you can do the same: Admin Settings → **API explorer** → "Sign in to
+Beeforce" (a normal Beeforce login); the page reopens as a full session with admin tools unlocked.
+
+**Developer panel** (one tool) and **API explorer** (every endpoint, plus any Beeforce `/api/…` path):
+- **Edit** method / path (checked before saving), **Reset** to the team / built-in value, **Turn off** optional calls
+  (reference lists and review checks — the tool then skips them). Calls a tool needs can be changed, not turned off.
+  Changes are saved in this browser; "endpoints.json" shares them with the team.
+- **Send GET** with the response body. **All pages** follows `page=0,1,2…` and combines the list. **Part** narrows the
+  response (`content`, `code`, `content.{id,code,description}`, `[0]` — click a suggestion).
+- Download the response (or the part) as **JSON, Excel or CSV**; copy it.
+- **cURL** (token hidden as `$BEEFORCE_TOKEN`; "cURL + token" asks first), **Postman** per endpoint / tool / filtered
+  list, and a **cURL script** (.sh) of every shown endpoint.
+- Writes (POST / PUT / DELETE) are never sent from here — copy them as cURL or Postman.
 
 Only a hash of the password is stored. This runs in the browser and config.js is public, so it keeps people out of
 the screens but is not server-grade security; the real lock is who can commit to the GitHub repository.
@@ -78,7 +89,8 @@ the screens but is not server-grade security; the real lock is who can commit to
   add areas, move areas between modules. Collapsible list with search. Limits: 8 areas per module, 6 tools per area.
   "Save to this browser" changes only your browser. "Export layout.json" gives a file for the whole team.
 - **Sign-in & audit** — client id/secret and audit webhook for this browser; status: configured / not configured / needs attention.
-- **API endpoints** — every Beeforce call the tools make (method + path), editable. "Import Postman collection" (v2.1)
+- **API explorer** — see above: test, edit, turn off and download any endpoint; send a GET to any Beeforce path.
+- **API endpoints** — every Beeforce call the tools make (method + path), editable as a table. "Import Postman collection" (v2.1)
   checks a collection against the registry: matched (green), check (amber), missing (red — keeps the current URL),
   and file requests that don't fit. Only invalid edits block "Apply & Save". "Download endpoints.json" gives the team file.
 
