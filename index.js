@@ -9,7 +9,10 @@
 
   var BASE = window.BFT_BASE || '';
   var old = document.getElementById('bft-host');
-  if (old) old.remove(); // every click = fresh load of the latest files
+  // Minimized: the bookmark brings it back exactly as it was. Otherwise every click = fresh load of the latest files.
+  var live = window.__BFT__;
+  if (old && live && live.host === old && live.Shell && live.Shell.isMinimized && live.Shell.isMinimized()) { live.Shell.restore(); return; }
+  if (old) old.remove();
 
   // ---- Modules → areas → tools (max 8 areas per module, 6 tools per area, so each fits the honeycomb) ----
   // A module with no areas yet shows as "Coming soon" on the module page. Add areas (here, in layout.json or in

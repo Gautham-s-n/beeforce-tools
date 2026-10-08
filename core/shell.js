@@ -20,6 +20,15 @@ var BW = 176, BH = Math.round(BW * 1.1547); // base cell size; real size via sca
 var SIDE = 320;
 var LEVEL1 = [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0], [2, -1], [-2, 1], [1, 1]]; // 9th slot = Settings (admins)
 var RING = [[1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1]];
+// Every place an area can take around the hub (1–2 steps out): the classic 8 + Settings first, then the rest of ring 2.
+var SLOTS = (function () {
+  var out = LEVEL1.slice(), key = function (p) { return p.join(); }, have = out.map(key);
+  for (var r = -2; r <= 2; r++) for (var q = -2; q <= 2; q++) {
+    var d = (Math.abs(q) + Math.abs(r) + Math.abs(q + r)) / 2;
+    if (d >= 1 && d <= 2 && have.indexOf(q + ',' + r) < 0) { out.push([q, r]); have.push(q + ',' + r); }
+  }
+  return out;
+})();
 var MODW = 260;        // base size of a module tile
 var CORNER = 0.07;     // hexagon corner rounding (share of the width)
 
@@ -100,6 +109,40 @@ ctx.CSS += '\n' + [
   'pre.code{white-space:pre-wrap;word-break:break-all}',
   '.login{overflow:auto;padding:24px 0}',
   '.lcard code,.page code{font:12px ui-monospace,Consolas,monospace;color:var(--ink2);word-break:break-all}',
+  /* minimize: the overlay steps aside, a small honey button stays on the Beeforce page */
+  '.app.min{pointer-events:none}.app.min::before{opacity:0}',
+  '.app>:not(.dock):not(.toasts){transition:opacity .25s var(--ease),transform .35s var(--ease),visibility 0s}',
+  '.app.min>:not(.dock):not(.toasts){opacity:0;transform:translateY(18px) scale(.98);visibility:hidden;transition:opacity .2s var(--ease),transform .3s var(--ease),visibility 0s .3s}',
+  '.dock{position:fixed;z-index:20;width:58px;height:66px;pointer-events:none;opacity:0;transform:scale(.6);transition:opacity .25s var(--ease),transform .4s var(--spring)}',
+  '.app.min .dock{pointer-events:auto;opacity:1;transform:none}',
+  '.dock .dhex{width:58px;height:66px;border:0;padding:0;background:#C98A14;clip-path:var(--dockhex);display:grid;place-items:center;cursor:pointer;filter:drop-shadow(0 10px 18px #0008);transition:transform .35s var(--spring)}',
+  '.dock .dhex>span{width:55px;height:63px;clip-path:var(--dockhex2);background:var(--honeygrad);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--honeyink);font:800 11px/1 "Schibsted Grotesk",system-ui,sans-serif}',
+  '.dock .dhex:hover,.dock .dhex:focus-visible{transform:translateY(-3px) scale(1.06);outline:none}',
+  '.dock.drag .dhex{cursor:grabbing;transition:none}',
+  '.dock .dlabel{position:absolute;right:68px;top:50%;margin-top:-22px;padding:8px 12px;border-radius:12px;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);font:600 13px/1.3 "Schibsted Grotesk",system-ui,sans-serif;white-space:nowrap;box-shadow:0 14px 30px -14px #000a;opacity:0;transform:translateX(8px);transition:opacity .2s,transform .3s var(--spring);pointer-events:none}',
+  '.dock .dlabel span{display:block;font-weight:500;font-size:11.5px;color:var(--ink2)}',
+  '.dock:hover .dlabel,.dock .dhex:focus-visible+.dlabel{opacity:1;transform:none}',
+  '.dock.left .dlabel{right:auto;left:68px;transform:translateX(-8px)}',
+  '.dock.low .dhex>span b{color:#B4232F}',
+  /* Lightbox: a soft sky-blue light behind the honeycomb glides after the pointer; the gaps glow around it */
+  '.backlight{position:absolute;left:0;top:0;width:520px;height:520px;margin:-260px 0 0 -260px;border-radius:50%;z-index:4;pointer-events:none;opacity:0;transition:opacity .5s var(--ease);background:radial-gradient(circle,var(--blcore) 0%,var(--blmid) 38%,transparent 66%);will-change:transform}',
+  '.backlight.on{opacity:1}',
+  /* arrange mode */
+  '.arrbtn[aria-pressed=true]{background:var(--honeybg);color:var(--honey);border-color:var(--honey)}',
+  '.slotlayer{position:absolute;inset:0;z-index:5;pointer-events:none}',
+  '.slotmark{position:absolute;opacity:0;animation:fadeup .3s var(--ease) forwards}',
+  '.slotmark svg{display:block;overflow:visible}.slotmark path{fill:var(--well);fill-opacity:.35;stroke:var(--line2);stroke-width:1.6;stroke-dasharray:6 6;transition:stroke .15s,fill .15s}',
+  '.slotmark.hot path{stroke:var(--honey);fill:var(--honeybg);fill-opacity:.8;stroke-dasharray:none;stroke-width:2.2}',
+  '.stage.arranging .cell.canmove{cursor:grab;touch-action:none}',
+  '.stage.arranging .cell.canmove .tl{animation:jig 1.6s ease-in-out infinite;animation-delay:var(--jd,0s)}',
+  '.stage.arranging .cell.canmove .rim{background:var(--honey)}',
+  '@keyframes jig{0%,100%{rotate:-1.1deg}50%{rotate:1.1deg}}',
+  '.cell.dragging{transition:none!important;z-index:9;cursor:grabbing;filter:drop-shadow(0 26px 26px var(--cellshadow)) drop-shadow(0 0 22px var(--honeyglow))}',
+  '.cell.dragging .tl{animation:none!important}',
+  '.cell.swapme .tl{animation:none!important;--k:.9;opacity:.75}',
+  '.arrbar{position:absolute;left:50%;bottom:22px;z-index:8;display:flex;align-items:center;gap:10px;padding:8px 10px 8px 16px;border-radius:999px;background:var(--panel2);border:1px solid var(--honey);box-shadow:0 20px 40px -20px var(--shadow);color:var(--ink);font-size:13.5px;transform:translate(-50%,20px);opacity:0;pointer-events:none;transition:opacity .25s var(--ease),transform .4s var(--spring);max-width:calc(100% - 40px)}',
+  '.arrbar.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}.arrbar>.ic{color:var(--honey)}',
+  '@media (prefers-reduced-motion:reduce){.stage.arranging .cell.canmove .tl{animation:none}}',
   /* liquid motion + 3D hover */
   '.stage.goo{filter:url(#bft-goo)}',
   '.cell .tl{width:100%;height:100%;transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(var(--z,0px)) scale(var(--k,1));transition:transform .45s var(--spring)}',
@@ -158,6 +201,20 @@ function scope() {
   S.view = VIEWS.some(function (x) { return x[0] === v; }) ? v : 'honeycomb';
 }
 function areaById(id) { return AREAS.filter(function (a) { return a.id === id; })[0]; }
+/* Where each area of this module sits: its saved position (Arrange mode) or the next free classic place. */
+function areaSlots() {
+  var used = {}, out = {};
+  AREAS.forEach(function (a) { if (a.pos && ctx.Layout.validPos(a.pos) && !used[a.pos.join()]) { out[a.id] = a.pos; used[a.pos.join()] = 1; } });
+  AREAS.forEach(function (a) { if (!out[a.id]) { var s = SLOTS.filter(function (p) { return !used[p.join()]; })[0]; out[a.id] = s; used[s.join()] = 1; } });
+  return out;
+}
+/* Which of the 6 places around an area each of its tools takes. */
+function toolSlots(area) {
+  var used = {}, out = {}, ring = area.ring || [];
+  area.tools.forEach(function (t) { var i = ring.indexOf(t); if (i >= 0 && i < 6 && !used[i]) { out[t] = i; used[i] = 1; } });
+  area.tools.forEach(function (t) { if (out[t] == null) for (var i = 0; i < 6; i++) if (!used[i]) { out[t] = i; used[i] = 1; break; } });
+  return out;
+}
 function initials(n) { n = String(n || '?').replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean); return ((n[0] || '?')[0] + ((n[1] || '')[0] || '')).toUpperCase(); }
 
 /* ---------------- theme (dark / light / system, remembered per browser) ---------------- */
@@ -191,15 +248,82 @@ function mount() {
   Theme.apply();
   R.toasts = h('div.toasts');
   app.appendChild(R.toasts);
+  app.style.setProperty('--dockhex', 'path("' + hexPath(58, 66) + '")');
+  app.style.setProperty('--dockhex2', 'path("' + hexPath(55, 63) + '")');
+  buildDock();
   requestAnimationFrame(function () { app.classList.add('in'); });
   return app;
 }
+
+/* ---------------- minimize ----------------
+ * The overlay stays in the page with everything in it (open tool, loaded file, review, results); only its look
+ * steps aside. A honey button (draggable, position remembered) brings it back; so does clicking the bookmark. */
+function buildDock() {
+  R.dockIco = h('span');
+  R.dockHex = h('button.dhex', { type: 'button', 'aria-label': 'Open APIary' }, R.dockIco);
+  R.dockLabel = h('div.dlabel');
+  R.dock = h('div.dock', { 'aria-hidden': 'true' }, R.dockHex, R.dockLabel);
+  ctx.appEl.appendChild(R.dock);
+  var pos = U.store.get('dockPos', null);
+  function place(p) {
+    var W = window.innerWidth, H = window.innerHeight;
+    p = p || { x: W - 84, y: H - 96 };
+    p.x = Math.max(8, Math.min(W - 66, p.x)); p.y = Math.max(8, Math.min(H - 74, p.y));
+    R.dock.style.left = p.x + 'px'; R.dock.style.top = p.y + 'px';
+    R.dock.classList.toggle('left', p.x < W / 2);
+    return p;
+  }
+  R.placeDock = function () { pos = place(pos); };
+  R.placeDock();
+  var start = null, moved = false;
+  R.dockHex.addEventListener('pointerdown', function (e) {
+    start = { x: e.clientX, y: e.clientY, px: pos ? pos.x : R.dock.offsetLeft, py: pos ? pos.y : R.dock.offsetTop }; moved = false;
+    R.dockHex.setPointerCapture(e.pointerId);
+  });
+  R.dockHex.addEventListener('pointermove', function (e) {
+    if (!start) return;
+    var dx = e.clientX - start.x, dy = e.clientY - start.y;
+    if (!moved && Math.abs(dx) + Math.abs(dy) < 5) return;
+    moved = true; R.dock.classList.add('drag');
+    pos = place({ x: start.px + dx, y: start.py + dy });
+  });
+  R.dockHex.addEventListener('pointerup', function () {
+    if (!start) return;
+    start = null; R.dock.classList.remove('drag');
+    if (moved) U.store.set('dockPos', pos); else restore();
+  });
+  R.dockHex.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); restore(); } });
+}
+function dockText() {
+  if (!R.dock) return;
+  var mod = moduleById(S.module), left = Api.state.token ? Api.minutesLeft() : null;
+  var where = S.level === 'tool' && TOOLS[S.tool] ? TOOLS[S.tool].name : S.level === 'area' && areaById(S.area) ? areaById(S.area).name : S.level === 'login' ? 'Sign in' : (mod ? mod.name : 'APIary');
+  U.swap(R.dockIco, U.icon(S.level === 'tool' && TOOLS[S.tool] && TOOLS[S.tool].icon ? TOOLS[S.tool].icon : mod ? mod.icon : 'home', 20), h('b', left != null ? left + 'm' : '—'));
+  U.swap(R.dockLabel, 'APIary · ' + where, h('span', (left != null ? left + ' min left · ' : ctx.adminConsole ? 'Admin console · ' : 'Signed out · ') + 'click to open, drag to move'));
+  R.dock.classList.toggle('low', left != null && left <= 10);
+}
+function minimize() {
+  if (!ctx.appEl || ctx.appEl.classList.contains('min')) return;
+  hidePeek(); hideTip(); closeMenus();
+  dockText(); R.placeDock();
+  ctx.appEl.classList.add('min');
+  R.dock.setAttribute('aria-hidden', 'false');
+  R.minimized = true;
+}
+function restore() {
+  if (!ctx.appEl) return;
+  ctx.appEl.classList.remove('min');
+  R.dock.setAttribute('aria-hidden', 'true');
+  R.minimized = false;
+  if (S.level !== 'login' && S.level !== 'tool') layout({ instant: true });
+}
+function isMinimized() { return !!R.minimized; }
 
 /* ---------------- login ---------------- */
 function showLogin(msg, forceSetup) {
   S.level = 'login';
   var app = ctx.appEl;
-  Array.prototype.slice.call(app.children).forEach(function (c) { if (c !== R.toasts) c.remove(); });
+  Array.prototype.slice.call(app.children).forEach(function (c) { if (c !== R.toasts && c !== R.dock) c.remove(); });
   R.toolbar = null;
 
   var env = U.store.get('env', 'production');
@@ -371,7 +495,7 @@ function secretsPanel(o) {
 /* ---------------- main shell ---------------- */
 function buildMain(fromLogin) {
   var app = ctx.appEl;
-  Array.prototype.slice.call(app.children).forEach(function (c) { if (c !== R.toasts) c.remove(); });
+  Array.prototype.slice.call(app.children).forEach(function (c) { if (c !== R.toasts && c !== R.dock) c.remove(); });
   cells = {};
   views = {};
   ctx.Layout.build();
@@ -390,7 +514,9 @@ function buildMain(fromLogin) {
     R.modPill, R.crumb, h('span.topgap'), R.viewSw, R.env, whoWrap,
     h('button.iconbtn', { type: 'button', title: 'Search tools (Ctrl K)', 'aria-label': 'Search tools', onclick: openPalette }, U.icon('search', 18)),
     Theme.button(),
-    h('button.iconbtn', { type: 'button', title: 'Close (session stays signed in)', 'aria-label': 'Close', onclick: hide }, U.icon('x', 18)));
+    R.arrBtn = h('button.iconbtn.arrbtn', { type: 'button', title: 'Arrange — drag hexagons to rearrange', 'aria-label': 'Arrange', 'aria-pressed': 'false', onclick: function () { setArrange(!S.arrange); } }, U.icon('move', 18)),
+    h('button.iconbtn.minbtn', { type: 'button', title: 'Minimize — back to Beeforce; everything stays as it is', 'aria-label': 'Minimize', onclick: minimize }, U.icon('minimize', 18)),
+    h('button.iconbtn', { type: 'button', title: 'Close APIary (you stay signed in; it reopens where you were)', 'aria-label': 'Close', onclick: hide }, U.icon('x', 18)));
 
   R.homePane = h('div.sidepane');
   R.areaPane = h('div.sidepane.areapane.off');
@@ -412,11 +538,16 @@ function buildMain(fromLogin) {
     '<feGaussianBlur in="SourceGraphic" stdDeviation="0" result="b"/><feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11" result="g"/>' +
     '<feComposite in="SourceGraphic" in2="g" operator="atop"/></filter></svg>';
   R.blur = defs.querySelector('feGaussianBlur');
-  R.body = h('div.body', defs, R.side, R.modHead, R.modFoot, R.stage, R.gallery, R.peek, R.tip, R.work);
+  R.slotLayer = h('div.slotlayer');
+  R.light = h('div.backlight');
+  R.arrBar = h('div.arrbar');
+  S.arrange = false;
+  R.body = h('div.body', defs, R.side, R.modHead, R.modFoot, R.light, R.slotLayer, R.stage, R.arrBar, R.gallery, R.peek, R.tip, R.work);
   app.insertBefore(top, R.toasts);
   app.insertBefore(R.body, R.toasts);
 
   buildCells();
+  wireLight();
   drawModulePill(); drawViewSwitch(); markAdmin();
   drawHomePane();
   S.level = 'home'; S.area = null; S.tool = null;
@@ -427,6 +558,11 @@ function buildMain(fromLogin) {
   var live = (ctx.MODULES || []).some(function (m) { return m.id === S.module; });
   var toModules = fromLogin && !ctx.adminConsole && (ctx.MODULE_LIST || []).length > 0 && !(U.store.get('skipModules', false) && live);
   var then = R.afterBuild; R.afterBuild = null;
+  // Re-opened in the same session (after Close): go back to the area / tool you were on.
+  if (!then && !fromLogin && !ctx.adminConsole) {
+    var pl = null; try { pl = JSON.parse(sessionStorage.getItem('bft.place') || 'null'); } catch (x) {}
+    if (pl && (pl.level === 'area' || pl.level === 'tool') && anyAreaById(pl.area) && (pl.level === 'area' || (TOOLS[pl.tool] && areaOf(pl.tool)))) then = [pl.level, pl.area, pl.tool];
+  }
   requestAnimationFrame(function () { requestAnimationFrame(function () {
     if (ctx.adminConsole) go('tool', 'settings', 'admin-settings');
     else if (then) go.apply(null, then);
@@ -439,8 +575,9 @@ function mkCell(id, cls, content, onClick, label, size) {
   var w = size || BW, hh = Math.round(w * 1.1547);
   var c = h('button.cell.' + cls, { type: 'button', 'aria-label': label || id, style: { width: w + 'px', height: hh + 'px' } },
     h('div.tl', h('div.rim', { style: { clipPath: 'path("' + hexPath(w, hh) + '")' } }, h('div.face', { style: { clipPath: 'path("' + hexPath(w - 3, hh - 3) + '")' } }, content))));
-  c._bw = w; c._bh = hh;
-  c.addEventListener('click', function (e) { if (!c.classList.contains('gone')) onClick && onClick(e); });
+  c._bw = w; c._bh = hh; c._id = id;
+  c.addEventListener('click', function (e) { if (R.justDragged) return; if (!c.classList.contains('gone')) onClick && onClick(e); });
+  c.addEventListener('pointerdown', function (e) { if (S.arrange) dragStart(e, c); });
   c.addEventListener('mousemove', function (e) { tilt(c, e); });
   c.addEventListener('mouseleave', function () { untilt(c); });
   cells[id] = c;
@@ -527,6 +664,7 @@ function modulesLayout() {
     p.d = 80 + i * 90; L['m:' + m.id] = p;
     if (m.id === S.module) at = p;
   });
+  if (S.arrange) R.targets = list.map(function (m, i) { return { index: i, x: L['m:' + m.id].x, y: L['m:' + m.id].y, w: tw, occ: 'm:' + m.id }; });
   // the hub waits, invisible, inside the current module's tile
   L.hub = place('hub', at.x, at.y, tw, 0); L.hub.gone = 1;
   Object.keys(cells).forEach(function (id) {
@@ -550,12 +688,20 @@ function levelLayout(opts) {
     return L;
   }
   if (S.level === 'home' || opts.intro) {
-    var k = Math.min(1, (W - SIDE - 60) / 790, (H - 40) / 570);
+    var sl = areaSlots();
+    // scale so every used place (or, while arranging, every possible place) fits
+    var pts = S.arrange ? SLOTS : AREAS.map(function (a) { return sl[a.id]; }).concat([[1, 0], [0, 1], [-1, 1], [-1, 0], [1, -1], [0, -1]]);
+    var mx = 0, mr = 0; pts.forEach(function (p) { mx = Math.max(mx, Math.abs(p[0] + p[1] / 2)); mr = Math.max(mr, Math.abs(p[1])); });
+    var k = Math.min(1, (W - SIDE - 60) / (368 * mx + 238), (H - 40) / (319 * mr + 251));
     var w = 168 * k, gap = 16 * k;
     hubAt = { x: cx, y: cy };
     L.hub = place('hub', cx, cy, w);
+    if (S.arrange) R.targets = SLOTS.map(function (s) {
+      var q = axial(s[0], s[1], w, gap, cx, cy), occ = AREAS.filter(function (a) { return sl[a.id].join() === s.join(); })[0];
+      return { slot: s, x: q.x, y: q.y, w: w, occ: occ ? 'a:' + occ.id : null };
+    });
     AREAS.forEach(function (a, i) {
-      var p = axial(LEVEL1[i][0], LEVEL1[i][1], w, gap, cx, cy);
+      var p = axial(sl[a.id][0], sl[a.id][1], w, gap, cx, cy);
       L['a:' + a.id] = opts.intro ? place('a:' + a.id, cx, cy, w * 0.3, 0) : place('a:' + a.id, p.x, p.y, w);
       L['a:' + a.id].d = opts.intro ? 0 : 60 + i * 35;
       a.tools.forEach(function (t) { L['t:' + t] = place('t:' + t, p.x, p.y, w * 0.3, 0); L['t:' + t].gone = 1; });
@@ -573,22 +719,28 @@ function levelLayout(opts) {
     L['a:' + area.id] = place('a:' + area.id, cx, cy, 190 * k2);
     L['a:' + area.id].sel = 1;
     var slots = RING.map(function (q) { return axial(q[0], q[1], unit, gap2, cx, cy); });
+    var ts = toolSlots(area), taken = {};
     area.tools.forEach(function (t, i) {
-      L['t:' + t] = place('t:' + t, slots[i].x, slots[i].y, 168 * k2);
+      var s = ts[t]; taken[s] = t;
+      L['t:' + t] = place('t:' + t, slots[s].x, slots[s].y, 168 * k2);
       L['t:' + t].d = 140 + i * 55;
     });
+    if (S.arrange) R.targets = slots.map(function (p, i) { return { index: i, x: p.x, y: p.y, w: 168 * k2, occ: taken[i] ? 't:' + taken[i] : null }; });
     var gi = 0;
-    for (var s = area.tools.length; s < 6; s++, gi++) {
+    for (var s = 0; s < 6; s++) {
+      if (taken[s] != null || S.arrange) continue;   // while arranging, empty places are drop targets instead
       L['g:' + gi] = place('g:' + gi, slots[s].x, slots[s].y, 168 * k2, gi === 0 ? 1 : 0.55);
       L['g:' + gi].d = 140 + s * 55;
       if (gi === 0) L['g:' + gi].back = 1;
+      gi++;
     }
     for (; gi < 6; gi++) { L['g:' + gi] = place('g:' + gi, cx, cy, 40, 0); L['g:' + gi].gone = 1; }
     // mini-map at top of the side panel
     var mcx = SIDE / 2, mcy = 150, mw = 46, mg = 5;
     L.hub = place('hub', mcx, mcy, mw); L.hub.mini = 1;
+    var msl = areaSlots();
     AREAS.forEach(function (a, i) {
-      var p = axial(LEVEL1[i][0], LEVEL1[i][1], mw, mg, mcx, mcy);
+      var p = axial(msl[a.id][0], msl[a.id][1], mw, mg, mcx, mcy);
       if (a.id !== area.id) { L['a:' + a.id] = place('a:' + a.id, p.x, p.y, mw); L['a:' + a.id].mini = 1; L['a:' + a.id].d = i * 20; }
       else hubAt = p;
       a.tools.forEach(function (t) {
@@ -621,9 +773,11 @@ function levelLayout(opts) {
 
 function layout(opts) {
   opts = opts || {};
+  R.targets = null;
   var L = computeLayout(opts);
   var rm = U.reducedMotion();
   var maxD = 0;
+  R.lastL = L;
   Object.keys(cells).forEach(function (id) {
     var c = cells[id], p = L[id];
     if (!p) return;
@@ -639,8 +793,186 @@ function layout(opts) {
     c.tabIndex = p.gone || p.o === 0 || (id.indexOf('g:') === 0 && !p.back) ? -1 : 0;
     c.setAttribute('aria-hidden', p.gone || p.o === 0 ? 'true' : 'false');
   });
+  markMovable();
+  drawSlotMarks();
   if (opts.instant) void R.stage.offsetWidth; // commit, so the next layout animates from here
   else if (!rm) { flow(maxD + 950); R.settleAt = Date.now() + maxD + 650; }
+}
+
+/* ---------------- arrange (drag and drop) ----------------
+ * Arrange mode: areas can be dropped on any of the 18 places around the hub (drop on another area = swap), tools on any
+ * of the 6 places around their area, module tiles anywhere in the row. Every drop is saved in this browser
+ * (core/layout.js: area.pos, area.ring, module order); admins can download it as the team's layout.json. */
+function setArrange(on, quiet) {
+  if (on && (ctx.adminConsole || S.level === 'tool' || S.level === 'login')) return;
+  if (on && S.level === 'home' && S.view !== 'honeycomb') { S.view = 'honeycomb'; U.store.set('view', 'honeycomb'); drawViewSwitch(); R.gallery.classList.remove('on'); }
+  S.arrange = !!on;
+  hidePeek(); hideTip();
+  Object.keys(cells).forEach(function (k) { untilt(cells[k]); });
+  R.stage.classList.toggle('arranging', S.arrange);
+  if (R.arrBtn) R.arrBtn.setAttribute('aria-pressed', S.arrange ? 'true' : 'false');
+  layout();
+  drawArrangeBar();
+  if (!quiet && S.arrange && !U.store.get('arrangeTipSeen', false)) { U.store.set('arrangeTipSeen', true); UI.toast('Drag a hexagon to a new place. Changes save in this browser as you go.'); }
+}
+function movable(id) {
+  if (!S.arrange) return false;
+  if (S.level === 'home') return id.indexOf('a:') === 0 && id !== 'a:settings';
+  if (S.level === 'area') return id.indexOf('t:') === 0 && (areaById(S.area) || { tools: [] }).tools.indexOf(id.slice(2)) >= 0;
+  if (S.level === 'modules') return id.indexOf('m:') === 0;
+  return false;
+}
+function markMovable() {
+  Object.keys(cells).forEach(function (id) {
+    var on = movable(id) && !cells[id].classList.contains('gone');
+    cells[id].classList.toggle('canmove', on);
+    if (on && !cells[id].style.getPropertyValue('--jd')) cells[id].style.setProperty('--jd', (-Math.random() * 1.6).toFixed(2) + 's');
+  });
+}
+function drawSlotMarks() {
+  if (!R.slotLayer) return;
+  var list = S.arrange && R.targets ? R.targets.filter(function (t) { return !t.occ; }) : [];
+  U.swap(R.slotLayer, list.map(function (t) {
+    var w = t.w, hh = w * 1.1547;
+    var m = h('div.slotmark', { style: { left: (t.x - w / 2) + 'px', top: (t.y - hh / 2) + 'px', width: w + 'px', height: hh + 'px' } });
+    m.innerHTML = '<svg viewBox="0 0 ' + w + ' ' + hh + '" width="' + w + '" height="' + hh + '"><path d="' + hexPath(w - 4, hh - 4) + '" transform="translate(2 2)"/></svg>';
+    t.mark = m;
+    return m;
+  }));
+}
+function drawArrangeBar() {
+  if (!R.arrBar) return;
+  var show = S.arrange && S.level !== 'tool';
+  R.arrBar.classList.toggle('on', show);
+  if (R.arrBtn) R.arrBtn.style.display = ctx.adminConsole || S.level === 'tool' ? 'none' : '';
+  if (!show) return;
+  var what = S.level === 'modules' ? 'Drag module tiles to change their order.' : S.level === 'area' ? 'Drag tools to any place around ' + ((areaById(S.area) || {}).name || 'the area') + '.' : 'Drag areas to any place around the hub. Drop on another area to swap. Click an area to arrange its tools.';
+  U.swap(R.arrBar, U.icon('move', 18), h('span', what),
+    UI.btn('Reset', { sm: true, kind: 'quiet', icon: 'retry', onClick: resetArrangement }),
+    ctx.Layout.isAdmin() ? UI.btn('Team file', { sm: true, kind: 'quiet', icon: 'download', onClick: downloadTeamLayout }) : null,
+    UI.btn('Done', { sm: true, kind: 'primary', icon: 'check', onClick: function () { setArrange(false); } }));
+}
+var drag = null;
+function dragStart(e, c) {
+  if (!movable(c._id) || c.classList.contains('gone') || e.button > 0) return;
+  var p = R.lastL && R.lastL[c._id]; if (!p) return;
+  drag = { c: c, id: c._id, x0: e.clientX, y0: e.clientY, px: p.x, py: p.y, s: p.w / c._bw, moved: false, target: null };
+  try { c.setPointerCapture(e.pointerId); } catch (x) {}
+  c.addEventListener('pointermove', dragMove);
+  c.addEventListener('pointerup', dragEnd);
+  c.addEventListener('pointercancel', dragEnd);
+}
+function dragMove(e) {
+  if (!drag) return;
+  var dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  if (!drag.moved && Math.abs(dx) + Math.abs(dy) < 6) return;
+  var c = drag.c;
+  if (!drag.moved) { drag.moved = true; c.classList.add('dragging'); hidePeek(); }
+  var x = drag.px + dx, y = drag.py + dy;
+  c.style.transitionDelay = '0ms';
+  c.style.transform = 'translate(' + Math.round(x - c._bw / 2) + 'px,' + Math.round(y - c._bh / 2) + 'px) scale(' + (drag.s * 1.08).toFixed(4) + ')';
+  var best = null, bd = Infinity;
+  (R.targets || []).forEach(function (t) { var d = Math.hypot(t.x - x, t.y - y); if (d < bd) { bd = d; best = t; } });
+  if (best && (bd > best.w * 0.75 || best.occ === drag.id)) best = null;
+  if (drag.target !== best) {
+    if (drag.target) { if (drag.target.mark) drag.target.mark.classList.remove('hot'); if (drag.target.occ && cells[drag.target.occ]) cells[drag.target.occ].classList.remove('swapme'); }
+    drag.target = best;
+    if (best) { if (best.mark) best.mark.classList.add('hot'); if (best.occ && cells[best.occ]) cells[best.occ].classList.add('swapme'); }
+  }
+}
+function dragEnd() {
+  if (!drag) return;
+  var d = drag; drag = null;
+  d.c.removeEventListener('pointermove', dragMove); d.c.removeEventListener('pointerup', dragEnd); d.c.removeEventListener('pointercancel', dragEnd);
+  d.c.classList.remove('dragging');
+  Object.keys(cells).forEach(function (k) { cells[k].classList.remove('swapme'); });
+  if (!d.moved) return;
+  R.justDragged = true; setTimeout(function () { R.justDragged = false; }, 0);
+  if (d.target) dropOn(d.id, d.target);
+  layout();
+}
+function saveArrangement(mutate) {
+  var m = ctx.Layout.effective();
+  mutate(m);
+  var errs = ctx.Layout.saveLocal(m);
+  if (errs.length) { UI.toast(errs[0], 'bad'); return false; }
+  ctx.Layout.build(); TOOLS = ctx.TOOLS; scope();
+  return true;
+}
+function dropOn(id, t) {
+  if (S.level === 'home') {
+    var sl = areaSlots(), from = sl[id.slice(2)];
+    if (t.occ) sl[t.occ.slice(2)] = from;
+    sl[id.slice(2)] = t.slot;
+    saveArrangement(function (m) { m.areas.forEach(function (a) { if (sl[a.id] && a.module === S.module) a.pos = sl[a.id].slice(); }); });
+  } else if (S.level === 'area') {
+    var area = areaById(S.area), ts = toolSlots(area), ring = ['', '', '', '', '', ''];
+    var tool = id.slice(2), fromI = ts[tool];
+    if (t.occ) ts[t.occ.slice(2)] = fromI;
+    ts[tool] = t.index;
+    Object.keys(ts).forEach(function (k) { ring[ts[k]] = k; });
+    saveArrangement(function (m) { m.areas.forEach(function (a) { if (a.id === area.id) a.ring = ring; }); });
+  } else if (S.level === 'modules') {
+    var ids = (ctx.MODULE_LIST || []).map(function (x) { return x.id; }), mid = id.slice(2);
+    ids.splice(ids.indexOf(mid), 1); ids.splice(t.index, 0, mid);
+    saveArrangement(function (m) {
+      // visible modules take the new order; hidden ones keep their places in between
+      var vis = ids.map(function (i) { return m.modules.filter(function (x) { return x.id === i; })[0]; }).filter(Boolean), k = 0;
+      m.modules = m.modules.map(function (x) { return ids.indexOf(x.id) >= 0 ? vis[k++] : x; });
+    });
+  }
+}
+async function resetArrangement() {
+  var what = S.level === 'modules' ? 'the module order' : S.level === 'area' ? 'the tool places in ' + areaById(S.area).name : 'the area places in ' + ((moduleById(S.module) || {}).name || 'this module');
+  if (!(await UI.confirm({ title: 'Reset ' + what + '?', body: 'Back to the team / built-in arrangement. Only this browser is affected.', verb: 'Reset' }))) return;
+  var base = ctx.Layout.base();
+  saveArrangement(function (m) {
+    if (S.level === 'modules') {
+      var order = base.modules.map(function (x) { return x.id; });
+      m.modules.sort(function (a, b) { var i = order.indexOf(a.id), j = order.indexOf(b.id); return (i < 0 ? 99 : i) - (j < 0 ? 99 : j); });
+    } else m.areas.forEach(function (a) {
+      var b = base.areas.filter(function (x) { return x.id === a.id; })[0] || {};
+      if (S.level === 'area' && a.id === S.area) { if (b.ring) a.ring = b.ring.slice(); else delete a.ring; }
+      if (S.level === 'home' && a.module === S.module) { if (b.pos) a.pos = b.pos.slice(); else delete a.pos; }
+    });
+  });
+  layout();
+  UI.toast('Arrangement reset.');
+}
+function downloadTeamLayout() {
+  var data = ctx.Layout.exportRepo(ctx.Layout.effective());
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' }));
+  a.download = 'layout.json'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  ctx.Audit.onDownload('layout.json');
+  UI.toast('layout.json downloaded. Commit it next to index.js to give everyone this arrangement.');
+}
+
+/* ---------------- Lightbox (backlight) ----------------
+ * One light behind the comb: it eases toward the pointer (rAF only while it is still moving). Shown on the module
+ * page, the honeycomb and an open area; hidden on tool pages and in gallery / cards / list views. */
+var LB = { x: 0, y: 0, tx: 0, ty: 0, run: false, inside: false };
+function lightWanted() { return !!R.light && LB.inside && (S.level === 'modules' || S.level === 'area' || (S.level === 'home' && S.view === 'honeycomb')); }
+function lightShow() { if (R.light) R.light.classList.toggle('on', lightWanted()); }
+function lightTick() {
+  var dx = LB.tx - LB.x, dy = LB.ty - LB.y;
+  LB.x += dx * 0.12; LB.y += dy * 0.12;
+  if (Math.abs(dx) + Math.abs(dy) < 0.5) { LB.x = LB.tx; LB.y = LB.ty; }
+  R.light.style.transform = 'translate(' + LB.x.toFixed(1) + 'px,' + LB.y.toFixed(1) + 'px)';
+  if (LB.x === LB.tx && LB.y === LB.ty) { LB.run = false; return; }
+  requestAnimationFrame(lightTick);
+}
+function wireLight() {
+  var b = R.body;
+  b.addEventListener('pointermove', function (e) {
+    var r = b.getBoundingClientRect();
+    LB.tx = e.clientX - r.left; LB.ty = e.clientY - r.top;
+    if (!LB.inside) { LB.inside = true; if (!R.light.classList.contains('on')) { LB.x = LB.tx; LB.y = LB.ty; } lightShow(); }
+    if (U.reducedMotion()) { LB.x = LB.tx; LB.y = LB.ty; R.light.style.transform = 'translate(' + LB.x + 'px,' + LB.y + 'px)'; return; }
+    if (!LB.run) { LB.run = true; requestAnimationFrame(lightTick); }
+  });
+  b.addEventListener('pointerleave', function () { LB.inside = false; lightShow(); });
 }
 
 /* ---------------- liquid motion + hover tilt ---------------- */
@@ -661,7 +993,7 @@ function gooTick() {
   requestAnimationFrame(gooTick);
 }
 function tilt(c, e) {
-  if (c.classList.contains('gone') || c.classList.contains('mini') || (c.classList.contains('ghost') && !c.classList.contains('back')) || U.reducedMotion()) return;
+  if (S.arrange || c.classList.contains('gone') || c.classList.contains('mini') || (c.classList.contains('ghost') && !c.classList.contains('back')) || U.reducedMotion()) return;
   var r = c.getBoundingClientRect();
   var fx = (e.clientX - r.left) / r.width - 0.5, fy = (e.clientY - r.top) / r.height - 0.5;
   c.style.setProperty('--ry', (fx * 14).toFixed(1) + 'deg');
@@ -673,6 +1005,7 @@ function untilt(c) { c.style.removeProperty('--rx'); c.style.removeProperty('--r
 function go(level, areaId, toolId) {
   hidePeek(); hideTip(); closeMenus();
   if (level === 'modules' && !(ctx.MODULE_LIST || []).length) level = 'home';
+  if (level === 'tool' && S.arrange) setArrange(false, true);
   var prev = S.level;
   if (level === 'tool' && !areaId) areaId = areaOf(toolId).id;
   // A tool or area in another module: switch module first.
@@ -705,6 +1038,8 @@ function go(level, areaId, toolId) {
   R.modPill.style.visibility = onMods ? 'hidden' : '';
   R.viewSw.style.visibility = onMods ? 'hidden' : '';
   layout();
+  drawArrangeBar();
+  lightShow();
   // keyboard focus must not stay on a cell that just went away (e.g. the module tile you clicked)
   var fe = ctx.root.activeElement;
   if (fe && fe.classList && fe.classList.contains('cell') && fe.classList.contains('gone')) fe.blur();
@@ -719,6 +1054,7 @@ function go(level, areaId, toolId) {
   var flat = level === 'home' && S.view !== 'honeycomb';
   if (flat) drawGallery(focusArea);
   R.gallery.classList.toggle('on', flat);
+  if (!ctx.adminConsole) try { sessionStorage.setItem('bft.place', JSON.stringify({ level: level, area: S.area, tool: S.tool })); } catch (x) {}
 }
 
 /* ---------------- modules ---------------- */
@@ -1002,6 +1338,7 @@ function markAdmin() { if (ctx.appEl) ctx.appEl.classList.toggle('admin', ctx.La
 
 /* ---------------- hover peek + tips ---------------- */
 function showPeek(a, cell) {
+  if (S.arrange) return;
   if (Date.now() < (R.settleAt || 0)) return; // cells are still flowing under the pointer
   var r = cell.getBoundingClientRect(), b = R.body.getBoundingClientRect();
   U.swap(R.peek, h('b', a.name), h('p', a.desc), h('ul', a.tools.map(function (t) { return h('li', TOOLS[t].name); })), h('em', 'Click to open →'));
@@ -1077,6 +1414,7 @@ function tickSession() {
   function upd() {
     if (S.level === 'login' || !Api.state.token) return;
     var left = Api.minutesLeft();
+    if (R.minimized) dockText();
     if (R.minEl) {
       R.minEl.textContent = String(left);
       R.minWrap.classList.toggle('low', left <= 10);
@@ -1087,6 +1425,7 @@ function tickSession() {
       ctx.Audit.endSession('TOKEN_EXPIRED');
       Api.signOut();
       showLogin('Your session ended after ' + ctx.CONFIG.TOKEN_VALIDITY_MIN + ' minutes. Sign in again.');
+      if (R.minimized) dockText();
     } else if (left === 10 && !R.warned) {
       R.warned = true;
       UI.toast('10 minutes left in this session. Finish or sign in again soon.');
@@ -1125,7 +1464,7 @@ async function signOutAsk() {
   ctx.Audit.endSession('LOGOUT');
   Api.signOut();
   ctx.adminConsole = false; ctx.adminUnlocked = false;
-  try { sessionStorage.removeItem('bft.adminUnlock'); } catch (x) {}
+  try { sessionStorage.removeItem('bft.adminUnlock'); sessionStorage.removeItem('bft.place'); } catch (x) {}
   clearInterval(R.timer);
   showLogin();
 }
@@ -1184,11 +1523,12 @@ document.addEventListener('mousedown', function (e) {
 }, true);
 function keyHint() { return h('div.keyhint', h('span', h('kbd', '←'), ' ', h('kbd', '→'), ' ', h('kbd', '↑'), ' ', h('kbd', '↓'), ' move'), h('span', h('kbd', 'Enter'), ' open'), h('span', h('kbd', 'Esc'), ' back')); }
 function onKey(e) {
-  if (!ctx.host || !ctx.host.isConnected) return;
+  if (!ctx.host || !ctx.host.isConnected || R.minimized) return;
   if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); e.stopPropagation(); openPalette(); return; }
   if (R.pal || S.level === 'login' || !ctx.appEl.isConnected || ctx.appEl.querySelector('.scrim')) return;
   var path = e.composedPath ? e.composedPath() : [];
   if (path.some(function (n) { return n && (/^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName) || n.isContentEditable); })) return;
+  if (e.key === 'Escape' && S.arrange) { e.preventDefault(); e.stopPropagation(); setArrange(false); return; }
   if (e.key === 'Escape' && (S.level === 'tool' || S.level === 'area' || (S.level === 'home' && (ctx.MODULE_LIST || []).length))) {
     e.preventDefault(); e.stopPropagation(); back();
     return;
@@ -1225,7 +1565,7 @@ function arrowNav(key) {
   return true;
 }
 var rt;
-function onResize() { clearTimeout(rt); rt = setTimeout(function () { if (S.level !== 'login') layout({ instant: true }); }, 80); }
+function onResize() { clearTimeout(rt); rt = setTimeout(function () { if (R.placeDock) R.placeDock(); if (S.level !== 'login' && !R.minimized) layout({ instant: true }); }, 80); }
 
 /* ---------------- start ---------------- */
 function start() {
@@ -1257,6 +1597,7 @@ function relayout() {
 }
 
 ctx.Shell = {
+  minimize: minimize, restore: restore, isMinimized: isMinimized,
   relayout: relayout, switchModule: switchModule, setView: setView, chooseModule: chooseModule, adminToBeeforce: adminToBeeforce,
   start: start, go: go, back: back, hide: hide, openPalette: openPalette, secretsPanel: secretsPanel, auditBadge: auditBadge, adminLoginPanel: adminLoginPanel,
   state: S,

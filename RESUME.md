@@ -63,6 +63,30 @@
   admin unlocked, reopens on Settings → API explorer.
 - Tests: t_api.py (new); t_dev.py labels updated. All suites pass; tool request logs identical to v3.1.
 
+## v3.4 (2026-10-08) — minimize
+- Top bar "Minimize": .app.min hides the overlay (state untouched, pointer-events none) and shows a draggable honey dock
+  (position 'bft.dockPos'; label = open tool + minutes left). Dock click / bookmark (index.js: if minimized → restore)
+  brings it back. Keys ignored while minimized. Background moved to .app::before so it can fade.
+- Close + bookmark in the same session reopens the last area / tool (sessionStorage 'bft.place'; cleared on sign-out).
+- Test: t_min.py. All suites pass; tool request logs identical to v3.1.
+- Next (user asked): single-employee fetch & execute (e.g. Timecard: employee + date → current paycode and details);
+  the user has an earlier build to share as reference.
+
+## v3.5 (2026-10-08) — arrange by drag and drop
+- core/layout.js: area.pos [q,r] (1–2 steps from the hub, validPos) and area.ring [toolId|'' ×6] in model, overrides,
+  diff and build. Module order already existed.
+- core/shell.js: SLOTS (18 places: classic 9 first), areaSlots(), toolSlots(); home scale fits the used places (all 18
+  while arranging); mini-map follows. Arrange mode (top-bar button, Esc/Done): jiggle, dashed slot marks, pointer drag
+  (dragStart/Move/End), drop = move or swap, saved via Layout.saveLocal (saveArrangement); Reset per level; admins
+  download layout.json ("Team file"). Tools, palette and admin console unaffected.
+- Test: t_arrange.py. All suites pass; tool request logs identical to v3.1.
+
+## v3.6 (2026-10-08) — Lightbox backlight (user's pick: option 3 = blue light + honey focus)
+- .backlight layer in .body behind the stage (z 4): radial --blcore/--blmid (sky blue; lighter in light theme), eased
+  toward the pointer with rAF only while moving (wireLight / lightTick); shown on modules / honeycomb / area, hidden on
+  tools and gallery views; reduced motion = no easing. Hover honey edge unchanged. Mocks: design3/e_backlit*.html.
+- Test: t_light.py. All suites pass; tool request logs identical to v3.1.
+
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).
 - Workflow transfer: "replace" column now really sent (old always sent false because of a header typo).

@@ -1,4 +1,4 @@
-# APIary (v3.3)
+# APIary (v3.6)
 
 APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
@@ -38,7 +38,20 @@ Change these later from the sign-in card ("Sign-in & audit setup") or Admin Sett
 
 ## Use
 
-Open app.beeforce.in (or UAT), click the bookmark, sign in, choose a module, pick an area, then a tool. `Ctrl K` finds
+Open app.beeforce.in (or UAT), click the bookmark, sign in, choose a module, pick an area, then a tool.
+
+**Arrange** (the four-arrow button, top right) to make the honeycomb your own: hexagons wiggle, empty places show as
+dashed outlines. Drag an area to any of the 18 places around the centre cell (drop it on another area to swap), click
+an area and drag its tools to any of its 6 places, or drag module tiles on the module page to change their order.
+Every drop is saved in this browser straight away; **Reset** puts the current level back, **Done** (or `Esc`) ends it.
+Admins also get **Team file** — a layout.json with this arrangement to commit for everyone.
+
+**Minimize** (the `—` button, top right) to use Beeforce alongside: APIary steps aside and a small honey button stays
+on the page (drag it anywhere; it shows the open tool and minutes left). Click it — or the bookmark — to come back
+exactly where you were, with any loaded file, review or results still there. **Close** (`×`) removes APIary; the
+bookmark then reopens it on the same tool (files you had loaded are gone). While APIary is minimized, the bookmark
+restores it instead of loading updates; close it with `×` first to pick up a new version. A full page reload in
+Beeforce also removes it (the bookmark then reopens on the same tool). `Ctrl K` finds
 any tool in any module, arrow keys move between hexagons, `Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute
 session; clicking the bookmark again in that session goes straight back to your module.
 
@@ -49,7 +62,8 @@ session; clicking the bookmark again in that session goes straight back to your 
 - **Keyboard:** arrow keys move between hexagons, `Enter` opens, `Esc` goes back one level (tool → area → module →
   module page), `Ctrl K` searches.
 - **Motion:** cells flow like liquid while they move and settle into crisp hexagons; the one under the pointer tilts
-  toward you. Turning on "reduce motion" in Windows / macOS turns these effects off.
+  toward you and gets a honey edge. A soft sky-blue light behind the honeycomb ("Lightbox") glides after the pointer,
+  so the gaps glow where you point (module page, honeycomb and areas; not on tool pages or list views). Turning on "reduce motion" in Windows / macOS turns these effects off.
 - **Views** (top bar): Honeycomb (default), Gallery, Cards, List. The last one you pick is remembered in this browser.
 - **Theme** (moon / sun icon): dark, light, or follow your system. Remembered in this browser.
 

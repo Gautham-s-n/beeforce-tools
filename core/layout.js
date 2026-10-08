@@ -9,7 +9,9 @@
  * Layers 2 and 3 use the same "overrides" format:
  *   { version: 2,
  *     modules: { <moduleId>: { name, icon, desc, hidden, order } },                       // new modules need a name
- *     areas:   { <areaId>: { module, name, icon, desc, hidden, order, tools: [toolId, …] } },  // new areas need a name
+ *     areas:   { <areaId>: { module, name, icon, desc, hidden, order, tools: [toolId, …], pos: [q, r], ring: [toolId|'', …6] } },
+ *              // new areas need a name. pos = hex position around the hub (axial, 1–2 steps out; set by dragging in
+ *              // Arrange mode); ring = which of the 6 places around the area each tool takes ('' = empty place).
  *     tools:   { <toolId>: { name, hint, hidden } } }
  * A tool listed in an area's `tools` is moved there (removed from any other area).
  * Tools can only be placed, renamed or hidden — a tool needs its modules/<id>.js file to work.
@@ -39,6 +41,8 @@ function defaultsModel() {
   };
 }
 function known(id) { return !!ctx.DEFAULT_TOOLS[id]; }
+function ringDist(q, r) { return (Math.abs(q) + Math.abs(r) + Math.abs(q + r)) / 2; }
+function validPos(p) { return Array.isArray(p) && p.length === 2 && p.every(function (n) { return Number.isInteger(n); }) && ringDist(p[0], p[1]) >= 1 && ringDist(p[0], p[1]) <= 2; }
 function sortByOrder(list) {
   list.forEach(function (x, i) { if (typeof x.order !== 'number') x.order = i; });
   list.sort(function (a, b) { return a.order - b.order; });
@@ -83,6 +87,8 @@ function apply(model, ov) {
     if (typeof o.icon === 'string' && ctx.U.ICONS[o.icon]) a.icon = o.icon;
     if (typeof o.hidden === 'boolean') a.hidden = o.hidden;
     if (typeof o.order === 'number') a.order = o.order;
+    if (o.pos === null) delete a.pos; else if (validPos(o.pos)) a.pos = [o.pos[0], o.pos[1]];
+    if (o.ring === null) delete a.ring; else if (Array.isArray(o.ring) && o.ring.length <= MAX_TOOLS) a.ring = o.ring.map(function (t) { return typeof t === 'string' && known(t) ? t : ''; });
     if (Array.isArray(o.tools)) {
       var list = o.tools.filter(function (t, i, arr) { return known(t) && arr.indexOf(t) === i; });
       m.areas.forEach(function (x) { if (x !== a) x.tools = x.tools.filter(function (t) { return list.indexOf(t) < 0; }); });
@@ -117,6 +123,10 @@ function diff(base, model) {
   out.modules = diffList(base.modules, model.modules, ['name', 'icon', 'desc']);
   out.areas = diffList(base.areas, model.areas, ['module', 'name', 'icon', 'desc'], function (a, b, o) {
     if (!b || a.tools.join() !== b.tools.join()) o.tools = a.tools.slice();
+    var bp = b && b.pos ? b.pos.join() : '', ap = a.pos ? a.pos.join() : '';
+    if (ap !== bp) o.pos = a.pos ? a.pos.slice() : null;
+    var br = b && b.ring ? b.ring.join() : '', ar = a.ring ? a.ring.join() : '';
+    if (ar !== br) o.ring = a.ring ? a.ring.slice() : null;
   });
   Object.keys(model.tools).forEach(function (id) {
     var t = model.tools[id], b = base.tools[id] || {}, o = {};
@@ -177,7 +187,8 @@ function build() {
     if (a.hidden || visMods.indexOf(a.module) < 0) return;
     count[a.module] = (count[a.module] || 0) + 1;
     if (count[a.module] > MAX_AREAS) return;
-    AREAS.push({ id: a.id, module: a.module, name: a.name, icon: a.icon, desc: a.desc, tools: a.tools.filter(function (t) { return !TOOLS[t].hidden; }), allTools: a.tools.slice() });
+    AREAS.push({ id: a.id, module: a.module, name: a.name, icon: a.icon, desc: a.desc, tools: a.tools.filter(function (t) { return !TOOLS[t].hidden; }), allTools: a.tools.slice(),
+      pos: a.pos ? a.pos.slice() : null, ring: a.ring ? a.ring.slice() : null });
   });
   var MODULES = m.modules.filter(function (x) { return !x.hidden && AREAS.some(function (a) { return a.module === x.id; }); })
     .map(function (x) { return { id: x.id, name: x.name, icon: x.icon, desc: x.desc }; });
@@ -203,7 +214,7 @@ function build() {
 ctx.Layout = {
   KEY: LKEY, MAX_AREAS: MAX_AREAS, MAX_TOOLS: MAX_TOOLS, ID_RE: ID_RE,
   defaultsModel: defaultsModel, base: base, effective: effective, apply: apply, diff: diff, validate: validate, unplaced: unplaced,
-  build: build, isAdmin: isAdmin, clone: clone,
+  build: build, isAdmin: isAdmin, clone: clone, validPos: validPos, ringDist: ringDist,
   local: readLocal,
   saveLocal: function (model) {
     var errs = validate(model); if (errs.length) return errs;
