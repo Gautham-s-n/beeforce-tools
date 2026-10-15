@@ -111,7 +111,7 @@ async function parse(file) {
   if (!colMap[ID_COL]) { var idc = fileCols.filter(function (c) { return norm(c) === 'id' || norm(c) === 'idblankcreate'; })[0]; if (idc) colMap[ID_COL] = idc; }
   if (!colMap[LINK_COL]) { var lc = LINK_ALIASES.map(function (a) { return fileCols.filter(function (c) { return norm(c) === a; })[0]; }).filter(Boolean)[0]; if (lc) colMap[LINK_COL] = lc; }
   var used = {}; Object.keys(colMap).forEach(function (k) { used[colMap[k]] = 1; });
-  var unknown = fileCols.filter(function (c) { return !used[c]; });
+  var unknown = fileCols.filter(function (c) { return !used[c] && (E.ERR_COLS || []).indexOf(c) < 0; });   // v3.9 error-file columns are expected extras
 
   var items = file.rows.map(function (r) {
     var row = {};
@@ -170,7 +170,7 @@ function browse(bodyEl) {
       onSelect: function (s) { delBtn.disabled = !s.size; U.swap(delBtn, U.icon('trash', 16), h('span', s.size ? 'Delete ' + s.size : 'Delete selected')); },
       toolbar: [
         UI.btn('Refresh', { icon: 'retry', sm: true, kind: 'quiet', onClick: draw }),
-        UI.btn('Export for editing', { icon: 'download', sm: true, onClick: function () { return template(true); } }),
+        E.exportButton(function () { return template(true); }),
         delBtn]
     });
     delBtn.onclick = function () {
@@ -190,7 +190,7 @@ ctx.defineTool('paycodes', {
   render: function (view) {
     view.appendChild(UI.tabs([
       { id: 'upload', label: 'Create / update', render: function (b) {
-        b.appendChild(E.uploadFlow({ module: MOD, template: function () { return template(false); }, parse: parse, itemLabel: 'Paycode',
+        b.appendChild(E.uploadFlow({ module: MOD, template: function () { return template(false); }, parse: parse, itemLabel: 'Paycode', errorRows: true, csv: true,
           blankNote: function () { return 'On update, columns that are missing or left blank keep their current value in ' + Api.envLabel() + ' (properties without a column are kept too). To empty a value, type CLEAR in the cell. Flags the record has no value for are sent as FALSE and day counts as 0 — the review lists them.'; },
           intro: 'Leave the id blank to create a new paycode. Fill the id to update an existing one. Attribute columns (DAY_FLAG, PAYDED_FLG …) go into the paycode’s properties. Tip: use “Export for editing” in Browse to get current data in this format.' }));
       } },

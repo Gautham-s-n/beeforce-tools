@@ -290,7 +290,7 @@ ctx.defineTool('employee-bulk-create', {
 
     view.appendChild(h('div.card', { style: { marginBottom: '16px' } }, h('b', 'Reference data'), refBox));
     view.appendChild(E.uploadFlow({
-      module: MOD, parse: parse, itemLabel: 'Employee', verb: 'employee',
+      module: MOD, parse: parse, itemLabel: 'Employee', verb: 'employee', errorRows: true,
       extraActions: tplBtn,
       intro: UI.note('info', null, 'Download the template (it is built live from your org levels, locations and dropdown lists), fill one row per employee and upload it. Every row is checked first — required fields, dates (DD-MM-YYYY, DD/MM/YYYY or YYYY-MM-DD), location, org-level entries, dropdown values and duplicate employee numbers. Only valid rows are created.'),
       reportCols: [{ label: 'employee_number', get: function (it) { return it.emp ? it.emp.employeeNumber : ''; } }, { label: 'first_name', get: function (it) { return it.emp ? it.emp.firstName : ''; } }]

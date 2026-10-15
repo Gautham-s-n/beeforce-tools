@@ -1,4 +1,4 @@
-# Resume point — APIary (BeeForce Tools v3) (updated 2026-10-07, evening)
+# Resume point — APIary (BeeForce Tools v3) (updated 2026-10-15)
 
 ## Done
 - Core (shell, engine, UI kit, Excel, API, audit) and all tools ported (26 tools in 8 areas).
@@ -88,6 +88,73 @@
 - Test: t_light.py. All suites pass; tool request logs identical to v3.1.
 - v3.6.1: user didn't want the light following the cursor → light only behind the hovered / keyboard-focused hexagon
   (lightFor / lightOff on cell enter/leave/focus; off on navigation and in arrange mode). No pointer tracking.
+
+## v3.7.0 (2026-10-14) — design refinement (Stage 3 of the redesign; approved direction D)
+- Files: core/styles.js (rewritten: flat tokens, type scale --t12…--t32, radii --r6/10/14, --mono, --focusring,
+  --fieldline, --honeyedge; every pre-3.7 variable name kept), core/util.js (U.motion / setMotion / themeChoice /
+  motionChoice / motionFollow / osReducedMotion / setPref; store.set returns saved?), core/shell.js, config.js (VERSION).
+- Motion levels on .app[data-motion]: full (original choreography, softer: goo stdDeviation 7, tilt ±5°, lift 14px, no
+  honey glow), calm (default; WAAPI in layout() from R.lastL: 380ms glide, entering cells fade/scale .94 in place,
+  leaving 160ms), off (no movement, 120ms fades, colour feedback). OS reduce → off unless the user confirmed an override
+  (bft.motionFollow=false); "Follow system again" restores it. Keys: bft.motion, bft.motionFollow, bft.theme (default
+  now 'system' when unset; saved values kept; invalid → defaults; blocked storage → session memory + message).
+- Appearance dialog (openAppearance) replaces the theme cycle button (top bar, sign-in card, user menu).
+- Screen sizes on .app[data-vp]: desk ≥1180 (side 264px), tab 761–1179 (72px rail), narrow ≤760 (no side pane; Back
+  button, crumb = current item, views in the user menu). sideW()/trailGeom() replace SIDE=320.
+- Area hover details moved from the floating peek into the side pane (desk) / a tooltip (tab, narrow).
+- Accessibility: focus ring on hexagons (blue, distinct from honey hover), dock and hidden module-page footer no longer
+  tabbable, workspace/gallery hidden from focus when off, field borders ≥3:1, text tokens ≥4.5:1 (t_contrast.py).
+- Tests: t_appearance, t_responsive, t_contrast, t_a11y (new); t_theme / t_modpage / t_light use rig.appearance().
+  rig.launch(reduced_motion, color_scheme, init) and BFT_MOTION=full|calm|off. All suites pass at all three motion
+  levels; tool request logs (method, path, query, body) identical to v3.6.1 (cmpcalls.py v361b v370*).
+
+## v3.8.0 (2026-10-15) — Stage 4 design, part 1 (visual system and high-traffic surfaces)
+- Decisions recorded with the user: mono stays the system stack (no font change); number keys 1–8 approved with
+  conditions; CSV approved next to Excel (v3.9).
+- core/ui.js: dialogs stack (OVS; Esc and Tab belong to the top one), focus trap, focus returns to the opener inside the
+  shadow root, safe default focus (Cancel when there is a danger button), aria-labelledby from the h2; UI.codeDialog
+  (numbered lines, Copy = text shown, Download); UI.menu (rendered at the app root so tables and panels never clip it;
+  opens focused; ↑ ↓ Home End, type-ahead, Esc returns focus; disabled items with a reason; checkable items);
+  UI.copy (ok toast, copy-by-hand dialog when the clipboard is blocked), UI.saveText, UI.setReason / btn({reason})
+  (aria-disabled + tooltip), UI.skeleton; toasts ok / warn / bad; UI.table: header sort (aria-sort), Columns menu (first
+  column locked; display only), empty state with Clear search, Clear selection, focusable scroll region, row ⋯ menu
+  (default for selectable tables with an id: Copy id, Show row as JSON), flags shown Yes / No (files keep TRUE / FALSE).
+- core/shell.js: top-bar search field (aria-label "Search tools"), Minimize + Close in a window-controls group, Arrange
+  and the view switch on the honeycomb toolbar (.combar; narrow: user menu); user / module menus via UI.menu; palette
+  rewrite (tools, areas, actions, admin endpoints from ctx.EP — read only; word-start and initials matching with marks;
+  Tab = search inside an area, Backspace leaves; Ctrl Enter = actions; selection follows the pointer only when it moves);
+  Keyboard shortcuts dialog (?); 1–8 open the numbered areas (numberedAreas(): the module's areas with tools, Settings
+  excluded) on the home honeycomb only, never while typing (input / textarea / select / contenteditable /
+  role=textbox|combobox|searchbox / IME) or with Ctrl / Alt / Meta (Shift allowed for AZERTY); badges on hover / focus,
+  always with bft.areaKeyBadges; Appearance → Keyboard (bft.areaKeys default true, bft.areaKeyBadges default false;
+  invalid values fall back); `/` focuses the table search. v3.8 CSS block at the end of the shell CSS (radii 4/6/8/12 —
+  --r10/--r14 now 8/12 —, controls 26/32/36, titles 22px, honey = selection, blue = action).
+- core/util.js: icons dots / columns / keyboard; U.areaKeys(), U.areaKeyBadges(). core/engine.js: entity browse uses
+  UI.skeleton and a row menu with the raw record (Copy id, Show JSON, Delete…).
+- Tests (rig4): every v3.7 suite at Calm / Full / Off + t_v38.py (top bar, keys incl. typing guards, shortcuts,
+  Appearance, palette, menus, dialogs, tables, narrow); request logs identical to v3.7.0 (cmpcalls / cmpset).
+
+## v3.9.0 (2026-10-15) — Stage 4 design, part 2 (write flow, CSV, developer tools)
+- core/engine.js uploadFlow: clickable steps (UI.steps canPick / onPick), Alt ← / Alt → (window.__bftFlowKey, one
+  listener per page), "Still loaded · Back to review" on step 1, Back to review from the Report and from a paused or
+  running apply (confirmation; runQueue stop after the current item). Going back re-runs cfg.parse on the same file
+  (same GETs) and marks applied rows by identity (row number(s) or label + occurrence) as kind 'done' — locked, and
+  stepApply filters them out again before sending. Report: counts, note for rows applied earlier, Download report
+  (Excel unchanged; CSV), Download errors, Retry N failed, Back to review, Start over.
+- Error files (option c): cfg.errorRows tools get an Excel file with Errors (uploaded rows with every column +
+  Error, Stage, Row in file; row lists like "2, 3" supported) and Result (v3.7 reportSheet); CSV = Errors; Copy errors
+  (TSV). Other tools: Result only. Re-upload: the three extra columns are ignored without the "Ignored column(s)" toast
+  (engine.entity parse, paycodes parse). errorRows / csv on: paycodes, punch, timeoff-raise, workflow-transfer, tasks,
+  roles, employee-bulk-create (errorRows only), engine.entity tools (accrual, paycode-combinations).
+- CSV (X.csvText / X.downloadCsv: UTF-8 BOM, CRLF, quoting): Download template / Export for editing take the tool's own
+  Excel builder's first sheet (captureCsv swaps X.download while it runs). Excel stays the one-click default
+  (UI.splitBtn: main button + chevron menu).
+- dev-panel.js: explorer split view ≥940px (list + detail, method filter with counts, status dots, empty state),
+  endpoint ⋯ menu (Copy path, Show cURL dialog), fold in the Developer panel, part picker Clear, Esc order (menu /
+  dialog before the panel), copy via UI.copy. admin-settings.js: sticky save bar, area preview. shell.js: Caps Lock
+  hint, eye button state, sign-in error role=alert. ui.js: run panel paused chip + Back to review, thin progress bar.
+- Tests: t_steps.py (pause → back → applied never re-sent, each POST once, report / error files Excel + CSV, error file
+  and CSV export re-upload), t_v39.py; t_api.py selectors follow the split view (helper C()).
 
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).

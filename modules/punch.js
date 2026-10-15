@@ -153,7 +153,7 @@ function bulk(el) {
     });
   }
   el.appendChild(E.uploadFlow({
-    module: MOD, itemLabel: 'Punch', verb: 'punch record', template: template, parse: parse,
+    module: MOD, itemLabel: 'Punch', verb: 'punch record', template: template, parse: parse, errorRows: true, csv: true,
     intro: h('div',
       UI.note('info', null, 'Without direction: externalNumber, punchTime. With direction: also punchType (IN/OUT). Any common date-time format works; it is converted to YYYY-MM-DD HH:MM:SS. Rows with a punchType column are sent with direction.'),
       h('div.field', { style: { marginTop: '14px' } }, h('span', 'Template type'), sw)),
