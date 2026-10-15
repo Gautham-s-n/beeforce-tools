@@ -222,7 +222,7 @@ function actions(area) {
     UI.tabs([
       { id: 'upload', label: 'Create / update', render: function (b) {
         b.appendChild(E.uploadFlow({
-          module: MOD, template: template, parse: parse, itemLabel: 'Position', verb: 'position change', errorRows: true, csv: true,
+          module: MOD, template: template, parse: parse, itemLabel: 'Position', verb: 'position change',
           intro: UI.note('info', null, 'Leave the id blank to create a position, fill it to update one. Rows with the same positionName (create) or id (update) are merged and their roles collected. Roles are role ids from Roles_Master, comma-separated.'),
           blankNote: 'On update a blank cell keeps the current value, including roles, person type and location access (the old tool reset blank cells to its create defaults). Position access and mandatory levels are always kept as they are.',
           reportCols: [{ label: 'roles', get: function (it) { return it.payload ? it.payload.roles.join(', ') : ''; } }]

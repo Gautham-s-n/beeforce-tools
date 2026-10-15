@@ -12,7 +12,9 @@ var MAX_SHOW = 200000;   // characters shown on screen (downloads have everythin
 var MAX_PAGES = 500;     // safety stop for "all pages"
 
 /* ---------------- small helpers ---------------- */
-function copy(text, what) { return UI.copy(text, what); }   // v3.8: ok toast, dialog to copy by hand when the browser blocks it
+function copy(text, what) {
+  return navigator.clipboard.writeText(text).then(function () { UI.toast(what + ' copied.'); }, function () { UI.toast('This browser blocked copying.', 'bad'); });
+}
 function save(name, text, type) {
   var a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: type || 'application/json' }));
@@ -150,8 +152,7 @@ function responseView(res, base) {
     pre.textContent = text.length > MAX_SHOW ? text.slice(0, MAX_SHOW) + '\n… (' + size(text.length - MAX_SHOW) + ' more — download to see everything)' : (text || '(empty response)');
   }
   var tm; partIn.addEventListener('input', function () { clearTimeout(tm); tm = setTimeout(refresh, 200); });
-  if (whole != null) U.swap(chips, suggestions(whole).map(function (s) { return h('button', { type: 'button', onclick: function () { partIn.value = s; refresh(); } }, s); }),
-    h('button.clearpart', { type: 'button', title: 'Show the whole response', onclick: function () { partIn.value = ''; refresh(); } }, 'Clear'));
+  if (whole != null) U.swap(chips, suggestions(whole).map(function (s) { return h('button', { type: 'button', onclick: function () { partIn.value = s; refresh(); } }, s); }));
   var name = function (ext) { return base + (partIn.value.trim() ? '_' + slug(partIn.value) : '') + '_' + U.stamp() + '.' + ext; };
   var tableOk = function () { return cur != null && typeof cur === 'object'; };
   var acts = h('div.row', { style: { alignItems: 'center', gap: '6px' } },
@@ -198,7 +199,7 @@ function endpointCard(key, o) {
   o = o || {};
   var el = h('div.devcard');
   var params = {}, qIn = UI.input({ placeholder: 'extra query, e.g. page=0&size=20' });
-  var editing = false, sendBox = null, collapsed = false;
+  var editing = false, sendBox = null;
   function draw() {
     var e = EP.get(key), ph = placeholders(e.path), isGet = e.method === 'GET';
     var urlEl = h('code.devurl');
@@ -218,20 +219,10 @@ function endpointCard(key, o) {
     if (sendBox) U.swap(s.out, Array.prototype.slice.call(sendBox.childNodes));
     sendBox = s.out;
     var src = e.source === 'built-in' ? null : UI.chip(e.source === 'team' ? 'Team file' : 'Changed in this browser', 'upd');
-    var more = h('button.iconbtn.devmore', { type: 'button', 'aria-label': 'More actions for ' + (e.label || key), 'aria-haspopup': 'menu', title: 'More' }, U.icon('dots', 16));
-    more.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      UI.menu(more, [{ header: e.method + ' ' + e.path },
-        { icon: 'copy', label: 'Copy path', sub: 'As registered (placeholders kept)', onClick: function () { copy(e.path, 'Path'); } },
-        { icon: 'code', label: 'Show cURL', sub: 'Token stays a placeholder', onClick: function () { UI.codeDialog(e.method + ' · ' + (e.label || key), EP.curl(key, params, { query: parseQuery(qIn.value) }), { what: 'cURL', filename: key + '.sh', mime: 'text/x-shellscript', note: 'The Authorization header uses $BEEFORCE_TOKEN. Nothing is sent from here.' }); } }],
-        { right: true, label: 'Endpoint actions' });
-    });
-    var fold = h('button.iconbtn.devfold', { type: 'button', 'aria-expanded': collapsed ? 'false' : 'true', 'aria-label': (collapsed ? 'Expand ' : 'Collapse ') + (e.label || key), title: collapsed ? 'Expand' : 'Collapse', onclick: function () { collapsed = !collapsed; draw(); } }, U.icon('chev', 16));
-    el.classList.toggle('collapsed', collapsed);
     U.swap(el,
       h('div.devhead', h('span.meth.m-' + e.method.toLowerCase(), e.method),
         h('div', h('b', e.label || key), h('code.dim', key + (o.showTool ? ' · ' + toolName(e.tool) : ''))),
-        e.off ? UI.chip('Turned off', 'bad') : null, src, e.required === false && !e.off ? UI.chip('Optional') : null, more, o.foldable ? fold : null),
+        e.off ? UI.chip('Turned off', 'bad') : null, src, e.required === false && !e.off ? UI.chip('Optional') : null),
       urlEl,
       e.off ? h('div.small.muted', { style: { marginTop: '6px' } }, 'The tool skips this call (as if it failed). Turn it on to use it again.') : null,
       editing ? editor(e) : null,
@@ -343,8 +334,7 @@ function open(toolId) {
   var scrim = h('div.scrim.devscrim');
   var panel = h('aside.devpanel', { role: 'dialog', 'aria-label': 'Developer panel' });
   function close() { scrim.classList.remove('on'); setTimeout(function () { scrim.remove(); }, 250); document.removeEventListener('keydown', esc, true); }
-  // Esc closes the panel only when nothing is open on top of it (a menu or a dialog closes first)
-  function esc(ev) { if (ev.key === 'Escape' && !UI.menuOpen() && !UI.topDialog()) { ev.stopPropagation(); close(); } }
+  function esc(ev) { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } }
   document.addEventListener('keydown', esc, true);
   scrim.addEventListener('mousedown', function (ev) { if (ev.target === scrim) close(); });
   var list = EP.all().filter(function (e) { return e.tool === toolId; });
@@ -356,82 +346,51 @@ function open(toolId) {
       UI.btn('cURL script', { sm: true, kind: 'quiet', icon: 'download', onClick: function () { save(toolId + '_curl.sh', curlScript(EP.all().filter(function (e) { return e.tool === toolId; }), name), 'text/x-shellscript'); } }),
       h('button.iconbtn', { type: 'button', title: 'Close', onclick: close }, U.icon('x', 18))),
     h('p.small.muted', list.length + ' endpoint' + (list.length === 1 ? '' : 's') + '. Edit, reset or turn off optional calls here (saved in this browser). All endpoints and any Beeforce path: Admin Settings → API explorer. Query parameters the tool adds while running are not shown.'),
-    list.length ? h('div.devlist', list.map(function (e) { return endpointCard(e.key, { foldable: true }); })) : UI.empty('This tool has no registered endpoints.')
+    list.length ? h('div.devlist', list.map(function (e) { return endpointCard(e.key); })) : UI.empty('This tool has no registered endpoints.')
   ]);
   scrim.appendChild(panel);
   ctx.appEl.appendChild(scrim);
   requestAnimationFrame(function () { scrim.classList.add('on'); });
 }
 
-/* ---------------- API explorer (Admin Settings tab) ----------------
- * v3.9: split view on wide screens — the list (search, tool, method filter with counts, status dots) on the left and
- * the chosen endpoint on the right; narrower screens open the endpoint inside the list as before. */
+/* ---------------- API explorer (Admin Settings tab) ---------------- */
 function explorer(el) {
-  var q = '', tool = '', only = '', openKeys = {}, selKey = null;
+  var q = '', tool = '', only = '', openKeys = {};
   var root = h('div');
   el.appendChild(root);
   var search = UI.input({ placeholder: 'Search endpoints — name, path or key' });
-  search.classList.add('tsearch'); search.setAttribute('aria-label', 'Search endpoints');
   var tm; search.addEventListener('input', function () { clearTimeout(tm); tm = setTimeout(function () { q = search.value.toLowerCase().trim(); drawList(); }, 150); });
   var toolSel = UI.select([{ value: '', label: 'All tools' }].concat(Object.keys(groupBy(EP.all())).map(function (t) { return { value: t, label: toolName(t) }; })), '');
-  toolSel.setAttribute('aria-label', 'Tool');
   toolSel.addEventListener('change', function () { tool = toolSel.value; drawList(); });
-  var segEl = h('div.exseg', { role: 'radiogroup', 'aria-label': 'Show' });
-  var listEl = h('div.exlist');
-  var detail = h('div.exdetail', { 'aria-live': 'polite' });
-  var wrap = h('div.exsplit', h('div.exleft', listEl), detail);
+  var onlySel = UI.select([{ value: '', label: 'All endpoints' }, { value: 'GET', label: 'GET only' }, { value: 'write', label: 'Writes only' }, { value: 'changed', label: 'Changed or turned off' }], '');
+  onlySel.addEventListener('change', function () { only = onlySel.value; drawList(); });
+  var listEl = h('div');
   function groupBy(list) { var g = {}; list.forEach(function (e) { (g[e.tool] = g[e.tool] || []).push(e); }); return g; }
-  function base() {
+  function shown() {
     return EP.all().filter(function (e) {
       if (tool && e.tool !== tool) return false;
+      if (only === 'GET' && e.method !== 'GET') return false;
+      if (only === 'write' && e.method === 'GET') return false;
+      if (only === 'changed' && e.source === 'built-in' && !e.off) return false;
       return !q || (e.label + ' ' + e.path + ' ' + e.key + ' ' + e.method + ' ' + toolName(e.tool)).toLowerCase().indexOf(q) >= 0;
     });
   }
-  function keep(e, k) { return k === 'GET' ? e.method === 'GET' : k === 'write' ? e.method !== 'GET' : k === 'changed' ? (e.source !== 'built-in' || e.off) : true; }
-  function shown() { return base().filter(function (e) { return keep(e, only); }); }
-  function split() { return wrap.clientWidth >= 940 || (!wrap.clientWidth && (ctx.appEl ? ctx.appEl.clientWidth : 1400) >= 1300); }
-  function drawSeg() {
-    var b = base();
-    U.swap(segEl, [['', 'All'], ['GET', 'GET'], ['write', 'Writes'], ['changed', 'Changed or off']].map(function (o) {
-      var n = b.filter(function (e) { return keep(e, o[0]); }).length;
-      return h('button', { type: 'button', role: 'radio', 'aria-checked': only === o[0] ? 'true' : 'false', onclick: function () { only = o[0]; drawList(); } }, o[1], h('em', String(n)));
-    }));
-  }
-  function dot(e) { return e.off ? h('i.exdot.off', { title: 'Turned off' }) : e.source === 'browser' ? h('i.exdot.chg', { title: 'Changed in this browser' }) : e.source === 'team' ? h('i.exdot.team', { title: 'From the team file' }) : h('i.exdot', { 'aria-hidden': 'true' }); }
-  function card(e) { return endpointCard(e.key, { module: 'API explorer', onChange: function () { drawList(); } }); }
-  function showDetail() {
-    var e = selKey && shown().filter(function (x) { return x.key === selKey; })[0];
-    U.swap(detail, e ? card(e) : h('div.exempty', h('b', 'Pick an endpoint'), h('p.small.muted', 'See its URL, edit or reset it, send a GET (writes are copy-only), or copy it as cURL or Postman.')));
-  }
   function row(e) {
     var body = h('div.exbody');
-    var sp = split(), isOpen = sp ? selKey === e.key : !!openKeys[e.key];
-    var head = h('button.exrow' + (sp && isOpen ? '.on' : ''), { type: 'button', 'aria-expanded': isOpen ? 'true' : 'false' },
-      h('span.meth.m-' + e.method.toLowerCase(), e.method), h('span.exname', e.label || e.key), h('code.expath', e.path), dot(e),
+    var head = h('button.exrow', { type: 'button', 'aria-expanded': openKeys[e.key] ? 'true' : 'false' },
+      h('span.meth.m-' + e.method.toLowerCase(), e.method), h('span.exname', e.label || e.key), h('code.expath', e.path),
       e.off ? UI.chip('Off', 'bad') : e.source !== 'built-in' ? UI.chip(e.source === 'team' ? 'Team' : 'Changed', 'upd') : null,
-      sp ? null : U.icon('chev', 14));
-    function fill() { U.swap(body, !split() && openKeys[e.key] ? card(e) : null); }
-    head.addEventListener('click', function () {
-      if (split()) {
-        selKey = e.key;
-        Array.prototype.forEach.call(listEl.querySelectorAll('.exrow.on'), function (r) { r.classList.remove('on'); r.setAttribute('aria-expanded', 'false'); });
-        head.classList.add('on'); head.setAttribute('aria-expanded', 'true');
-        showDetail();
-        return;
-      }
-      openKeys[e.key] = !openKeys[e.key]; head.setAttribute('aria-expanded', openKeys[e.key] ? 'true' : 'false'); fill();
-    });
+      U.icon('chev', 14));
+    function fill() { U.swap(body, openKeys[e.key] ? endpointCard(e.key, { module: 'API explorer', onChange: function () { drawList(); } }) : null); }
+    head.addEventListener('click', function () { openKeys[e.key] = !openKeys[e.key]; head.setAttribute('aria-expanded', openKeys[e.key] ? 'true' : 'false'); fill(); });
     fill();
     return h('div.exitem', head, body);
   }
   function drawList() {
     var list = shown(), g = groupBy(list);
-    wrap.classList.toggle('on', split());
-    drawSeg();
     U.swap(listEl, list.length ? Object.keys(g).map(function (t) {
       return h('section.exgrp', h('div.exgh', h('b', toolName(t)), h('span.small.muted', g[t].length + ' endpoint' + (g[t].length === 1 ? '' : 's'))), g[t].map(row));
-    }) : h('div.exempty', h('b', 'No endpoint matches'), h('button.linkbtn', { type: 'button', onclick: function () { q = ''; search.value = ''; tool = ''; toolSel.value = ''; only = ''; drawList(); } }, 'Clear the filters')));
-    if (split()) showDetail(); else U.clear(detail);
+    }) : UI.empty('No endpoint matches.'));
   }
   function draw() {
     U.swap(root,
@@ -443,15 +402,11 @@ function explorer(el) {
           UI.btn('cURL script (shown)', { sm: true, kind: 'quiet', icon: 'download', onClick: function () { save('apiary_curl.sh', curlScript(shown(), 'APIary endpoints'), 'text/x-shellscript'); } }),
           UI.btn('endpoints.json', { sm: true, kind: 'quiet', icon: 'download', onClick: function () { save('endpoints.json', JSON.stringify(EP.exportRepo(), null, 2) + '\n'); UI.toast('endpoints.json downloaded. Commit it next to index.js to share these endpoints with the team.'); } }))),
       customCard(),
-      h('div.exbar', h('div.exsearch', search), h('div.extool', toolSel), segEl),
-      wrap);
+      h('div.row', { style: { margin: '18px 0 10px', gap: '8px' } }, h('div', { style: { flex: '2 1 260px' } }, search), h('div', { style: { flex: '1 1 160px' } }, toolSel), h('div', { style: { flex: '1 1 160px' } }, onlySel)),
+      listEl);
     drawList();
   }
   draw();
-  // the split decision depends on the width the tab really gets; redraw once it is laid out and on resize
-  requestAnimationFrame(function () { if (wrap.isConnected) drawList(); });
-  var ro = window.ResizeObserver ? new ResizeObserver(function () { var was = wrap.classList.contains('on'); if (was !== split()) drawList(); }) : null;
-  if (ro) ro.observe(wrap);
 }
 
 /* Admin console: sign in to Beeforce from here, so requests can be sent (switches to a normal session with admin tools). */
@@ -507,28 +462,7 @@ ctx.addCSS('dev-panel', [
   '.exrow:hover{background:var(--rowhover)}.exrow .exname{font-weight:600;flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%}',
   '.exrow .expath{flex:1;min-width:0;font:12px ui-monospace,Consolas,monospace;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
   '.exrow>.ic:last-child{color:var(--ink3);transition:transform .2s var(--ease)}.exrow[aria-expanded=true]>.ic:last-child{transform:rotate(180deg)}',
-  '.exbody>.devcard{border:0;border-top:1px solid var(--line);border-radius:0}',
-  '.devcard.collapsed>:not(.devhead){display:none}',
-  '.devfold>.ic{transition:transform .2s var(--ease)}.devcard.collapsed .devfold>.ic{transform:rotate(-90deg)}',
-  '.devhead .iconbtn{width:30px;height:30px}',
-  '.devsug .clearpart{border-style:dashed;font-family:inherit}',
-  /* v3.9 explorer: filters, split view, status dots */
-  '.exbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:18px 0 10px}',
-  '.exsearch{flex:2 1 260px}.extool{flex:1 1 170px}',
-  '.exseg{display:inline-flex;padding:2px;gap:2px;border:1px solid var(--line);border-radius:var(--r8);background:var(--well)}',
-  '.exseg button{display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:0;border-radius:6px;background:none;color:var(--ink2);font-weight:600;font-size:12px}',
-  '.exseg button:hover{color:var(--ink)}.exseg button[aria-checked=true]{background:var(--panel3);color:var(--ink);box-shadow:0 1px 2px var(--shadow)}',
-  '.exseg em{font-style:normal;font:500 11px var(--mono);color:var(--ink3)}',
-  '.exsplit.on{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;align-items:start}',
-  '.exsplit:not(.on) .exdetail{display:none}',
-  '.exsplit.on .exleft{max-height:70vh;overflow:auto;padding-right:4px}',
-  '.exsplit.on .exdetail{position:sticky;top:0}',
-  '.exsplit.on .exitem{margin-bottom:4px;border-radius:var(--r8)}',
-  '.exsplit.on .exrow .expath{display:none}',
-  '.exsplit.on .exrow .exname{max-width:none;flex:1}',
-  '.exrow.on{background:var(--honeybg)}.exrow.on .exname{color:var(--ink)}',
-  '.exdot{width:7px;height:7px;border-radius:50%;flex:none;background:transparent}.exdot.chg{background:var(--honeyedge)}.exdot.off{background:var(--bad)}.exdot.team{background:var(--blue2)}',
-  '.exempty{border:1px dashed var(--line2);border-radius:var(--r12);padding:28px 18px;text-align:center;color:var(--ink2)}.exempty b{display:block;color:var(--ink);margin-bottom:4px}'
+  '.exbody>.devcard{border:0;border-top:1px solid var(--line);border-radius:0}'
 ].join('\n'));
 
 ctx.defineTool('dev-panel', { open: open, explorer: explorer, endpointCard: endpointCard, pick: pick, toTable: toTable });
