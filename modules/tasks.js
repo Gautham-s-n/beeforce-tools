@@ -128,7 +128,7 @@ ctx.defineTool('tasks', {
       { id: 'pending', label: 'Pending tasks', render: pending },
       { id: 'approve', label: 'Approve from file', render: function (el) {
         el.appendChild(E.uploadFlow({
-          module: MOD, itemLabel: 'Task', verb: 'approval', sheet: 'Task_IDs', parse: parse, errorRows: true, csv: true,
+          module: MOD, itemLabel: 'Task', verb: 'approval', sheet: 'Task_IDs', parse: parse,
           template: function () { return downloadTasks(); },
           intro: 'Upload a file with an id column (the Task_IDs sheet of the downloaded tasks). Only the id is used. Each task is completed as approved. “Download template” downloads your current pending tasks.'
         }));

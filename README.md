@@ -1,4 +1,4 @@
-# APIary (v3.9.0)
+# APIary (v3.6.1)
 
 APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
@@ -40,7 +40,7 @@ Change these later from the sign-in card ("Sign-in & audit setup") or Admin Sett
 
 Open app.beeforce.in (or UAT), click the bookmark, sign in, choose a module, pick an area, then a tool.
 
-**Arrange** (the button at the top right of the honeycomb, or Arrange in the user menu) to make the honeycomb your own: movable hexagons get a honey outline (and wiggle in Full motion), empty places show as
+**Arrange** (the four-arrow button, top right) to make the honeycomb your own: hexagons wiggle, empty places show as
 dashed outlines. Drag an area to any of the 18 places around the centre cell (drop it on another area to swap), click
 an area and drag its tools to any of its 6 places, or drag module tiles on the module page to change their order.
 Every drop is saved in this browser straight away; **Reset** puts the current level back, **Done** (or `Esc`) ends it.
@@ -52,7 +52,7 @@ exactly where you were, with any loaded file, review or results still there. **C
 bookmark then reopens it on the same tool (files you had loaded are gone). While APIary is minimized, the bookmark
 restores it instead of loading updates; close it with `×` first to pick up a new version. A full page reload in
 Beeforce also removes it (the bookmark then reopens on the same tool). `Ctrl K` finds
-any tool, area or action in any module (the search field in the top bar does the same), arrow keys move between hexagons, `1`–`8` open areas, `Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute
+any tool in any module, arrow keys move between hexagons, `Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute
 session; clicking the bookmark again in that session goes straight back to your module.
 
 - **Module page** (after sign-in): Attendance, Onboarding, Core. A module without tools yet shows "Coming soon".
@@ -60,56 +60,12 @@ session; clicking the bookmark again in that session goes straight back to your 
   (click it to come back to the module page). The top-left pill also switches module.
   Tick **"Skip this page next time and open the module I choose"** to go straight to your module at sign-in.
 - **Keyboard:** arrow keys move between hexagons, `Enter` opens, `Esc` goes back one level (tool → area → module →
-  module page), `Ctrl K` searches, `?` lists every key.
-  - `1`–`8` open the areas of the home honeycomb (the numbers show when you point at an area). They never act while you
-    type in a field. Turn them off in **Appearance → Area number shortcuts**; "Always show numbers on hexagons" keeps the
-    numbers visible.
-  - `/` jumps to the search of the table on screen.
-  - `Alt ←` / `Alt →` step back and forward in Create / update (see "Write flow" below).
-- **Back** (`‹` next to the logo) does the same as `Esc`: tool → area → all areas → module page. Its tooltip says where it goes.
-- **Appearance** (sliders icon in the top bar, on the sign-in card, and in the user menu): theme and motion, saved in
-  this browser.
-  - **Theme:** System (follows Windows / macOS; the default for browsers without a saved choice), Light or Dark. A theme
-    chosen in an earlier version is kept.
-  - **Motion:** **Full** — cells flow on a spring and briefly merge while they move, hexagons lift and tilt slightly under
-    the pointer; **Calm** (default) — short, settled movement: what stays on screen glides into place, new cells fade in
-    where they belong, hover lifts a cell by 2px; **Off** — no movement, screens change with a short fade, hover still
-    shows the honey edge. In Full and Calm a soft sky-blue light switches on behind the hovered (or keyboard-focused)
-    hexagon ("Lightbox"); it never follows the pointer.
-  - When Windows / macOS is set to **reduce motion**, APIary uses Off. Choosing Full or Calm then asks for confirmation
-    first; **Follow system again** hands control back to the system setting.
-- **Screen sizes:** at 1180px and wider the left pane shows the module, search, recent tools, area details on hover and
-  the Home → area → tool trail. From 761 to 1179px it becomes a narrow rail (search, recent, arrange; the trail as
-  icons with names as tooltips; area details as a tooltip). At 760px and below the pane is hidden: the workspace uses
-  the full width, the top bar shows the current place only, the Back button walks back, and the views move into the
-  user menu. Below 480px the module switch and Appearance are reached from the hub and the user menu.
-- **Views** (top right of the honeycomb, next to Arrange): Honeycomb (default), Gallery, Cards, List. The last one you pick is remembered in this browser.
-- **Search** (`Ctrl K` or the search field in the top bar): tools, areas and actions (Appearance, theme, views, Arrange,
-  sign out …). Words match the start of words ("acc pol"); short queries also match initials ("tu" → Timecard Update).
-  `Tab` on an area searches inside it; `Ctrl Enter` opens the actions of the selected row. Admins also find API endpoints
-  (copy the path, show cURL, open the Developer panel) — nothing is sent from the search.
-- **Tables:** click a column title to sort, **Columns** hides columns (only on screen), `/` searches, and the `⋯` on a
-  row copies its id or shows it as JSON. Flags show as Yes / No; files keep TRUE / FALSE.
-
-## Write flow (Create / update)
-
-Choose file → Review → Apply → Report. The step bar is clickable for steps you can go back to, and `Alt ←` / `Alt →`
-step back and forward.
-
-- **Back to the review** from the Report, or while a run is paused ("Back to review" next to Pause / Stop; it asks
-  first and stops after the item in progress). APIary reads Beeforce again with the same checks and marks the rows
-  already applied in this run: they are locked and are never sent again. Rows that failed or were not sent can be applied again.
-- **Downloads keep Excel as the one-click default.** The small arrow next to a download offers the other formats.
-  - *Download report*: Excel (the same Result sheet as before) or CSV.
-  - *Download errors* (Review and Report): for tools where each row stands alone (Paycodes, Punch, Timeoff Raise,
-    Workflow Transfer, Tasks, Roles & Positions, Employee Bulk Create, Accrual, Combinations) the Excel file has an
-    **Errors** sheet — the failed rows with all their columns plus Error, Stage and Row in file, ready to fix and
-    upload again — and the **Result** sheet as before. CSV gives the Errors sheet. Tools that group several rows per
-    item keep the Result list only. *Copy errors* puts the same rows on the clipboard, tab-separated.
-  - *Download template* and *Export for editing*: CSV of the upload sheet for the tools above (Employee Bulk Create
-    keeps its Excel-only template, which formats the id columns as text).
-    Reference sheets stay in the Excel version. CSV files are UTF-8; Excel may drop leading zeros from codes when it
-    opens a CSV directly (use Data → From Text, or keep the Excel file).
+  module page), `Ctrl K` searches.
+- **Motion:** cells flow like liquid while they move and settle into crisp hexagons; the one under the pointer tilts
+  toward you, gets a honey edge, and a soft sky-blue light switches on behind it so the gaps around it glow
+  ("Lightbox"). The light only appears on hovered (or keyboard-focused) hexagons; it never follows the pointer. Turning on "reduce motion" in Windows / macOS turns these effects off.
+- **Views** (top bar): Honeycomb (default), Gallery, Cards, List. The last one you pick is remembered in this browser.
+- **Theme** (moon / sun icon): dark, light, or follow your system. Remembered in this browser.
 
 ## Admin console (Settings)
 
@@ -139,9 +95,6 @@ Beeforce" (a normal Beeforce login); the page reopens as a full session with adm
 - **cURL** (token hidden as `$BEEFORCE_TOKEN`; "cURL + token" asks first), **Postman** per endpoint / tool / filtered
   list, and a **cURL script** (.sh) of every shown endpoint.
 - Writes (POST / PUT / DELETE) are never sent from here — copy them as cURL or Postman.
-- The API explorer shows the list and the chosen endpoint side by side on wide screens, with a method filter
-  (All / GET / Writes / Changed or off, with counts) and a dot for changed (honey), team (blue) and turned-off (red)
-  endpoints. `⋯` on an endpoint: Copy path, Show cURL. Endpoints in the Developer panel fold.
 
 Only a hash of the password is stored. This runs in the browser and config.js is public, so it keeps people out of
 the screens but is not server-grade security; the real lock is who can commit to the GitHub repository.
@@ -149,7 +102,6 @@ the screens but is not server-grade security; the real lock is who can commit to
 - **Layout** — modules (add, rename, hide, order; a module with no areas shows as "Coming soon"), then per module: rename, reorder, hide or move areas and tools,
   add areas, move areas between modules. Collapsible list with search. Limits: 8 areas per module, 6 tools per area.
   "Save to this browser" changes only your browser. "Export layout.json" gives a file for the whole team.
-  A save bar stays at the top while there are unsaved changes, and a preview shows the module's areas as they will appear.
 - **Sign-in & audit** — client id/secret and audit webhook for this browser; status: configured / not configured / needs attention.
 - **API explorer** — see above: test, edit, turn off and download any endpoint; send a GET to any Beeforce path.
 - **API endpoints** — every Beeforce call the tools make (method + path), editable as a table. "Import Postman collection" (v2.1)

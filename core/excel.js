@@ -99,21 +99,6 @@ async function download(filename, sheets) {
   ctx.Audit.onDownload(filename);
 }
 
-/* CSV next to Excel (v3.9): one sheet, UTF-8 with a byte-order mark (so Excel shows non-ASCII names correctly),
- * comma separated, CRLF line ends, values quoted when they contain a comma, quote or line break. Values are written
- * as shown: codes with leading zeros stay text in the file (Excel may drop the zeros when it opens a CSV). */
-function csvText(headers, rows) {
-  var q = function (v) { v = v == null ? '' : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : typeof v === 'object' ? JSON.stringify(v) : String(v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  return '\uFEFF' + [headers].concat(rows || []).map(function (r) { return r.map(q).join(','); }).join('\r\n') + '\r\n';
-}
-function downloadCsv(filename, sheet) {
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csvText(sheet.headers, sheet.rows)], { type: 'text/csv;charset=utf-8' }));
-  a.download = filename; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
-  ctx.Audit.onDownload(filename);
-}
-
 /* ---- value helpers ---- */
 function col(row, name) {
   if (!row) return '';
@@ -176,4 +161,4 @@ function fmt(v) {
   return v;
 }
 
-ctx.X = { xlsx: xlsx, exceljs: exceljs, read: read, download: download, csvText: csvText, downloadCsv: downloadCsv, col: col, has: has, str: str, int: int, num: num, bool: bool, date: date, time: time, fmt: fmt };
+ctx.X = { xlsx: xlsx, exceljs: exceljs, read: read, download: download, col: col, has: has, str: str, int: int, num: num, bool: bool, date: date, time: time, fmt: fmt };
