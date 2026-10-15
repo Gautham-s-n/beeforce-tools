@@ -69,7 +69,7 @@ ctx.defineTool('workflow-transfer', {
   desc: 'Move employees to a new manager in the approval workflow, from Excel.',
   render: function (body) {
     body.appendChild(E.uploadFlow({
-      module: MOD, itemLabel: 'Employee → manager', verb: 'transfer', parse: parse,
+      module: MOD, itemLabel: 'Employee → manager', verb: 'transfer', parse: parse, errorRows: true, csv: true,
       template: function () { return X.download('workflow_transfer_template.xlsx', [{ name: 'Workflow_Transfer', tabColor: '0369A1', headers: HEAD, rows: [], highlightCols: [0, 1] }]); },
       intro: 'Columns: externalNumber and newManager (required). replace: TRUE replaces the current manager, FALSE or blank adds the new one.',
       reportCols: [

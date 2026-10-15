@@ -2,7 +2,7 @@
  * Plain script body, run as new Function('ctx', <this file>). */
 
 ctx.CONFIG = {
-  VERSION: '3.6.1',
+  VERSION: '3.9.0',
 
   ENVIRONMENTS: {
     production: { label: 'Production', url: 'https://app.beeforce.in' },

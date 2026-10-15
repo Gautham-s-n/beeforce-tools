@@ -160,7 +160,7 @@ ctx.defineTool('timeoff-raise', {
     body.appendChild(UI.tabs([
       { id: 'bulk', label: 'Bulk upload', render: function (el) {
         el.appendChild(E.uploadFlow({
-          module: MOD, itemLabel: 'Request', verb: 'request', template: template, parse: parse,
+          module: MOD, itemLabel: 'Request', verb: 'request', template: template, parse: parse, errorRows: true, csv: true,
           intro: 'Columns: Employee Number, Paycode (the paycode code, e.g. WFH), Start date, End date (DD-MM-YYYY), remarks. One row is one request. Dates in other formats are converted to DD-MM-YYYY.',
           reportCols: ['emp', 'paycode', 'start', 'end', 'remarks'].map(function (k, i) { return { label: HEAD[i], get: function (it) { return it.o ? it.o[k] : ''; } }; })
             .concat([{ label: 'warning', get: function (it) { return it.warn || ''; } }])

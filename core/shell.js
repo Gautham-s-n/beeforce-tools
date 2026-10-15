@@ -1,9 +1,14 @@
 /* core/shell.js — the honeycomb shell: sign-in, module page, home comb, area bloom, tool trail, palette.
  *
  * Every hex on screen is one absolutely positioned button. Moving between levels only changes
- * each cell's transform/opacity, so CSS animates everything (staggered), and cells never re-mount.
- * While cells move, the stage gets a "liquid" SVG filter (cells stretch and bridge into each other);
- * it fades out when they settle, so at rest the hexagons are crisp. Hovered cells tilt toward the pointer.
+ * each cell's transform/opacity, and cells never re-mount. How the change is animated depends on the motion level
+ * (Appearance; data-motion on .app, see U.motion()):
+ *   full : CSS springs every cell to its new place (staggered); while cells move, the stage gets a "liquid" SVG filter
+ *          (cells stretch and bridge into each other) that fades out when they settle. Hovered cells tilt slightly.
+ *   calm : cells that stay on screen glide (Web Animations, 380ms, no overshoot); new cells fade in where they belong;
+ *          leaving cells fade out in place. Hover lifts a cell by 2px.
+ *   off  : no movement; new cells fade in (120ms). Hover still shows the honey edge.
+ * Screen sizes (data-vp): desk = 264px side pane, tab = 72px rail, narrow = no side pane (top-bar Back button).
  *
  *   modules: one big tile per module (Attendance, Onboarding, Core …); modules without areas say "Coming soon".
  *            The chosen tile flows into the centre and becomes the hub.
@@ -17,7 +22,13 @@
 var U = ctx.U, h = U.h, UI = ctx.UI, Api = ctx.Api;
 var AREAS = ctx.AREAS, TOOLS = ctx.TOOLS;
 var BW = 176, BH = Math.round(BW * 1.1547); // base cell size; real size via scale
-var SIDE = 320;
+/* Screen size: desk ≥1180px (264px side pane) · tab 761–1179px (72px rail) · narrow ≤760px (no side pane). */
+function vpOf(w) { return w >= 1180 ? 'desk' : w > 760 ? 'tab' : 'narrow'; }
+function curVp() { return vpOf((ctx.appEl && ctx.appEl.clientWidth) || window.innerWidth); }
+function setVp() { var v = curVp(), changed = R.vp !== v; R.vp = v; if (ctx.appEl) ctx.appEl.setAttribute('data-vp', v); return changed; }
+function sideW() { var v = R.vp || curVp(); return v === 'desk' ? 264 : v === 'tab' ? 72 : 0; }
+/* hub → area → tool trail next to an open tool (side pane on desk, rail on tab) */
+function trailGeom() { return R.vp === 'tab' ? { tx: 36, ty: 44, step: 62, tw: 40 } : { tx: 52, ty: 60, step: 88, tw: 56 }; }
 var LEVEL1 = [[0, -1], [1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0], [2, -1], [-2, 1], [1, 1]]; // 9th slot = Settings (admins)
 var RING = [[1, -1], [1, 0], [0, 1], [-1, 1], [-1, 0], [0, -1]];
 // Every place an area can take around the hub (1–2 steps out): the classic 8 + Settings first, then the rest of ring 2.
@@ -56,10 +67,10 @@ ctx.CSS += '\n' + [
   '.cell.ghost{cursor:default}.cell.ghost.back{cursor:pointer}',
   '.cell.ghost:not(.back):hover .rim{background:var(--ghostrim);transform:none}.cell.ghost:not(.back):hover{filter:none}',
   '.cell.ghost:not(.back):hover .face{background:var(--well2)}',
-  '.tip{position:absolute;z-index:9;padding:5px 10px;border-radius:8px;background:var(--panel3);border:1px solid var(--line2);font-size:12.5px;font-weight:600;pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s var(--ease);white-space:nowrap}',
+  '.tip{position:absolute;z-index:9;padding:5px 10px;border-radius:var(--r6);background:var(--panel3);border:1px solid var(--line2);font-size:12.5px;font-weight:600;pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s var(--ease);white-space:nowrap}',
   '.tip.on{opacity:1;transform:none}',
   '.areapane{padding-top:300px}',
-  '.toolpane .sib{margin-top:350px}',
+  '.toolpane .sib{margin-top:290px}',
   '.loadcard{display:flex;align-items:center;gap:12px;color:var(--ink2)}',
   '.lfoot{margin-top:16px;color:var(--ink3);font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}',
   '.lcard.wide{width:min(620px,94vw)}',
@@ -68,58 +79,79 @@ ctx.CSS += '\n' + [
   '.menu.right{left:auto;right:0}',
   '.top .envpill{margin-left:0}',
   '.modwrap{position:relative}',
-  '.modpill{display:flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);font-weight:700;font-size:13.5px;transition:border-color .15s,background .15s}',
-  '.modpill:hover{border-color:var(--blue2);background:var(--panel2)}.modpill .ic{color:var(--blue3)}',
-  '.menu{position:absolute;top:calc(100% + 8px);left:0;min-width:280px;background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:6px;box-shadow:0 30px 60px -30px var(--shadow);z-index:30;animation:fadeup .18s var(--ease)}',
-  '.menu button{width:100%;display:flex;gap:12px;align-items:flex-start;text-align:left;padding:10px 12px;border:0;background:none;border-radius:10px}',
-  '.menu button:hover,.menu button.on{background:var(--panel3)}.menu button .ic{color:var(--blue3);margin-top:2px}',
-  '.menu b{display:block}.menu span{font-size:12.5px;color:var(--ink2)}',
-  '.viewsw{display:flex;gap:2px;padding:3px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}',
-  '.viewsw button{width:32px;height:30px;border:0;border-radius:9px;background:none;color:var(--ink3);display:grid;place-items:center;transition:background .15s,color .15s}',
-  '.viewsw button:hover{color:var(--ink)}.viewsw button[aria-pressed=true]{background:var(--bluebg);color:var(--blue3)}',
-  '.gallery{position:absolute;left:320px;right:0;top:0;bottom:0;overflow:auto;padding:30px 40px 60px;z-index:6;opacity:0;pointer-events:none;transform:translateY(8px);transition:opacity .3s var(--ease),transform .35s var(--ease)}',
-  '.gallery.on{opacity:1;pointer-events:auto;transform:none}',
+  '.modpill{display:flex;align-items:center;gap:7px;height:30px;padding:0 10px;border-radius:var(--r6);border:1px solid var(--line);background:none;font-weight:600;font-size:var(--t13);white-space:nowrap;transition:border-color .15s,background .15s}',
+  '.modpill:hover{border-color:var(--line2);background:var(--panel2)}.modpill .ic{color:var(--blue3)}',
+  '.menu{position:absolute;top:calc(100% + 8px);left:0;min-width:260px;background:var(--panel2);border:1px solid var(--line2);border-radius:var(--r10);padding:6px;box-shadow:0 18px 40px -16px var(--shadow);z-index:30;animation:fadeup .16s var(--ease)}',
+  '.menu button{width:100%;display:flex;gap:10px;align-items:flex-start;text-align:left;padding:8px 10px;border:0;background:none;border-radius:var(--r6)}',
+  '.menu button:hover,.menu button.on{background:var(--panel3)}.menu button .ic{color:var(--blue3);margin-top:1px}',
+  '.menu b{display:block;font-weight:600}.menu span{font-size:var(--t12);color:var(--ink2)}',
+  '.menu .menuviews{display:none}',
+  '.viewsw{display:flex;gap:2px;padding:2px;border:1px solid var(--line);border-radius:var(--r10);background:var(--well)}',
+  '.viewsw button{width:30px;height:26px;border:0;border-radius:7px;background:none;color:var(--ink3);display:grid;place-items:center;transition:background .15s,color .15s}',
+  '.viewsw button:hover{color:var(--ink)}.viewsw button[aria-pressed=true]{background:var(--panel3);color:var(--ink);box-shadow:0 1px 2px var(--shadow)}',
+  '.gallery{position:absolute;left:264px;right:0;top:0;bottom:0;overflow:auto;padding:28px 32px 48px;z-index:6;opacity:0;pointer-events:none;visibility:hidden;transform:translateY(6px);transition:opacity .25s var(--ease),transform .3s var(--ease),visibility 0s .3s}',
+  '.gallery.on{opacity:1;pointer-events:auto;visibility:inherit;transform:none;transition:opacity .25s var(--ease),transform .3s var(--ease),visibility 0s}',
   '.gpage{max-width:1180px}',
-  '.gtitle{display:flex;align-items:baseline;gap:14px;margin-bottom:18px}.gtitle h2{margin:0;font-size:26px;letter-spacing:-.01em}',
-  '.gsec,.ccard{animation:fadeup .35s var(--ease) both}',
-  '.gsec{margin-bottom:26px;border-radius:16px;transition:box-shadow .4s}',
-  '.gsh{display:flex;gap:12px;align-items:center;margin-bottom:12px}.gsh h3{margin:0;font-size:16px}.gsh p{margin:2px 0 0;color:var(--ink2);font-size:12.5px}',
-  '.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}',
-  '.gtile{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--panel);text-align:left;transition:transform .2s var(--ease),border-color .2s,box-shadow .2s}',
-  '.gtile:hover,.gtile:focus-visible{transform:translateY(-3px);border-color:var(--blue2);box-shadow:0 14px 30px -18px var(--cellglow);outline:none}',
-  '.gtile b{font-size:14.5px}.gtile span{font-size:12.5px;color:var(--ink2)}',
-  '.ghex{width:40px;height:46px;clip-path:var(--hex);background:var(--bluebg);display:grid;place-items:center;color:var(--blue3);margin-bottom:4px;transition:transform .25s var(--ease)}',
-  '.gtile:hover .ghex{transform:translateY(-2px) rotate(-6deg)}',
-  '.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;align-items:start}',
-  '.ccard{border:1px solid var(--line);border-radius:18px;background:var(--panel);padding:16px;transition:border-color .2s,box-shadow .4s}',
+  '.gtitle{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:18px}.gtitle h2{margin:0;font-size:var(--t24);font-weight:700;letter-spacing:-.015em}',
+  '.gsec,.ccard{animation:fadeup .3s var(--ease) both}',
+  '.gsec{margin-bottom:24px;border-radius:var(--r14);transition:box-shadow .4s}',
+  '.gsh{display:flex;gap:10px;align-items:center;margin-bottom:10px}.gsh h3{margin:0;font-size:var(--t15);font-weight:600}.gsh p{margin:1px 0 0;color:var(--ink2);font-size:var(--t12)}',
+  '.ggrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px}',
+  '.gtile{display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:14px;border:1px solid var(--line);border-radius:var(--r10);background:var(--panel);text-align:left;transition:transform .15s var(--ease),border-color .15s}',
+  '.gtile:hover{border-color:var(--honeyedge)}.gtile:focus-visible{border-color:var(--focusring)}',
+  '.app:not([data-motion=off]) .gtile:hover{transform:translateY(-1px)}',
+  '.gtile b{font-size:14px;font-weight:600}.gtile span{font-size:var(--t12);color:var(--ink2)}',
+  '.ghex{display:grid;place-items:center;color:var(--blue3);margin-bottom:4px}',
+  '.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}',
+  '.ccard{border:1px solid var(--line);border-radius:var(--r14);background:var(--panel);padding:12px;transition:border-color .2s,box-shadow .4s}',
   '.ccard:hover{border-color:var(--line2)}',
-  '.clist{display:grid;gap:4px}',
-  '.crow{display:flex;align-items:center;gap:12px;padding:9px 10px;border:0;border-radius:12px;background:none;text-align:left;transition:background .15s}',
-  '.crow:hover,.crow:focus-visible{background:var(--rowhover);outline:none}.crow div{flex:1;display:flex;flex-direction:column}.crow b{font-size:14px}.crow div span{font-size:12px;color:var(--ink2)}',
-  '.crow>.ic:last-child{transform:rotate(180deg);color:var(--ink3);opacity:0;transition:opacity .15s,transform .2s}.crow:hover>.ic:last-child{opacity:1;transform:rotate(180deg) translateX(-3px)}',
-  '.cic{width:30px;height:34px;clip-path:var(--hex);background:var(--toolface);display:grid;place-items:center;color:var(--blue3);flex:none}',
-  '.lwrap{border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden}',
+  '.clist{display:grid;gap:2px}',
+  '.crow{display:flex;align-items:center;gap:10px;padding:8px;border:0;border-radius:var(--r6);background:none;text-align:left;transition:background .15s}',
+  '.crow:hover{background:var(--rowhover)}.crow div{flex:1;min-width:0;display:flex;flex-direction:column}.crow b{font-size:var(--t13);font-weight:600}.crow div span{font-size:var(--t12);color:var(--ink2)}',
+  '.crow>.ic:last-child{transform:rotate(180deg);color:var(--ink3);opacity:0;transition:opacity .15s}.crow:hover>.ic:last-child,.crow:focus-visible>.ic:last-child{opacity:1}',
+  '.cic{width:22px;height:22px;display:grid;place-items:center;color:var(--blue3);flex:none}',
+  '.lwrap{border:1px solid var(--line);border-radius:var(--r10);background:var(--panel);overflow:hidden}',
   '.lsec{border-radius:0;transition:box-shadow .4s}',
-  '.lsh{display:flex;align-items:center;gap:10px;padding:10px 16px;background:var(--panel2);border-bottom:1px solid var(--line);color:var(--blue3)}.lsh b{color:var(--ink)}.lsh>span:last-child{margin-left:auto;font-size:12px;color:var(--ink3)}',
-  '.hexico{width:30px;height:34px;clip-path:var(--hex);background:var(--bluebg);display:grid;place-items:center;color:var(--blue3);flex:none}',
-  '.lrow{width:100%;display:grid;grid-template-columns:34px minmax(160px,1fr) minmax(200px,2fr);align-items:center;gap:10px;padding:8px 16px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;transition:background .12s}',
-  '.lrow:hover,.lrow:focus-visible{background:var(--rowhover);outline:none}.lrow .hint{color:var(--ink2);font-size:13px}.lrow .ar{color:var(--ink3);font-size:12px;text-align:right}',
-  '.flash{box-shadow:0 0 0 2px var(--blue2)}',
-  '.envpill.adm i{background:var(--honey);box-shadow:0 0 10px var(--honey)}',
+  '.lsh{display:flex;align-items:center;gap:8px;padding:8px 14px;background:var(--panel2);border-bottom:1px solid var(--line);color:var(--blue3)}.lsh b{color:var(--ink);font-weight:600}.lsh>span:last-child{margin-left:auto;font-size:var(--t12);color:var(--ink3)}',
+  '.hexico{width:22px;height:22px;display:grid;place-items:center;color:var(--blue3);flex:none}',
+  '.lrow{width:100%;display:grid;grid-template-columns:30px minmax(160px,1fr) minmax(200px,2fr);align-items:center;gap:10px;padding:8px 14px;border:0;border-bottom:1px solid var(--line);background:none;text-align:left;transition:background .12s}',
+  '.lrow:hover{background:var(--rowhover)}.lrow b{font-weight:600}.lrow .hint{color:var(--ink2);font-size:var(--t13)}.lrow .ar{color:var(--ink3);font-size:var(--t12);text-align:right}',
+  '.flash{box-shadow:0 0 0 2px var(--focusring)}',
+  '.envpill.adm i{background:var(--honeyedge)}',
   'pre.code{white-space:pre-wrap;word-break:break-all}',
   '.login{overflow:auto;padding:24px 0}',
-  '.lcard code,.page code{font:12px ui-monospace,Consolas,monospace;color:var(--ink2);word-break:break-all}',
+  '.lcard code,.page code{font:12px var(--mono);color:var(--ink2);word-break:break-all}',
+  /* top-bar Back button + side-pane rail (tablet) */
+  '.backbtn{color:var(--ink)}',
+  /* Appearance dialog */
+  '.dlg.appear{width:min(420px,100%)}',
+  '.appear .opt{margin-top:16px}',
+  '.appear .lab{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-weight:600;margin-bottom:6px}.appear .lab span{font-weight:400;color:var(--ink3);font-size:var(--t12)}',
+  '.wseg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;padding:3px;border:1px solid var(--line);border-radius:var(--r10);background:var(--well)}',
+  '.wseg button{height:32px;border:0;border-radius:7px;background:none;color:var(--ink2);font-weight:600;transition:background .15s,color .15s}',
+  '.wseg button:hover{color:var(--ink)}',
+  '.wseg button[aria-checked=true]{background:var(--panel3);color:var(--ink);box-shadow:0 1px 2px var(--shadow)}',
+  '.optdesc{margin-top:6px;font-size:var(--t12);color:var(--ink2);min-height:36px}',
+  '.sysnote{display:flex;gap:8px;align-items:flex-start;padding:9px 10px;border-radius:var(--r10);background:var(--warnbg);color:var(--ink);font-size:var(--t12);margin-top:8px}.sysnote>.ic{color:var(--honey);margin-top:1px}',
+  '.sysnote .linkbtn{font-size:var(--t12);margin-left:2px}',
+  '.apdemo{position:relative;height:84px;margin-top:10px;border:1px solid var(--line);border-radius:var(--r10);background:var(--bg);overflow:hidden}',
+  '.apdemo i{position:absolute;top:12px;width:50px;height:58px;clip-path:var(--hex);background:var(--line2)}',
+  '.apdemo i::after{content:"";position:absolute;inset:1.5px;clip-path:var(--hex);background:var(--areaface)}',
+  '.apdemo i.h{background:#C98A14}.apdemo i.h::after{background:var(--honeygrad)}',
+  '.appear .acts{align-items:center}',
+  /* narrow screens: the view switch moves from the top bar into the user menu */
+  '.app[data-vp=narrow] .menu .menuviews{display:flex;gap:4px;padding:6px 6px 2px;margin-top:4px;border-top:1px solid var(--line)}.menu .menuviews button{width:38px;height:32px;padding:0;justify-content:center;align-items:center}.menu .menuviews button[aria-pressed=true]{background:var(--panel3);color:var(--ink)}',
   /* minimize: the overlay steps aside, a small honey button stays on the Beeforce page */
   '.app.min{pointer-events:none}.app.min::before{opacity:0}',
   '.app>:not(.dock):not(.toasts){transition:opacity .25s var(--ease),transform .35s var(--ease),visibility 0s}',
   '.app.min>:not(.dock):not(.toasts){opacity:0;transform:translateY(18px) scale(.98);visibility:hidden;transition:opacity .2s var(--ease),transform .3s var(--ease),visibility 0s .3s}',
   '.dock{position:fixed;z-index:20;width:58px;height:66px;pointer-events:none;opacity:0;transform:scale(.6);transition:opacity .25s var(--ease),transform .4s var(--spring)}',
   '.app.min .dock{pointer-events:auto;opacity:1;transform:none}',
-  '.dock .dhex{width:58px;height:66px;border:0;padding:0;background:#C98A14;clip-path:var(--dockhex);display:grid;place-items:center;cursor:pointer;filter:drop-shadow(0 10px 18px #0008);transition:transform .35s var(--spring)}',
+  '.dock .dhex{width:58px;height:66px;border:0;padding:0;background:#C98A14;clip-path:var(--dockhex);display:grid;place-items:center;cursor:pointer;filter:drop-shadow(0 8px 14px #00000059);transition:transform .35s var(--spring)}',
   '.dock .dhex>span{width:55px;height:63px;clip-path:var(--dockhex2);background:var(--honeygrad);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;color:var(--honeyink);font:800 11px/1 "Schibsted Grotesk",system-ui,sans-serif}',
-  '.dock .dhex:hover,.dock .dhex:focus-visible{transform:translateY(-3px) scale(1.06);outline:none}',
+  '.dock .dhex:hover,.dock .dhex:focus-visible{transform:translateY(-2px) scale(1.04);outline:none}.dock .dhex:focus-visible{filter:drop-shadow(0 0 1px var(--focusring)) drop-shadow(0 0 4px var(--focusring))}',
   '.dock.drag .dhex{cursor:grabbing;transition:none}',
-  '.dock .dlabel{position:absolute;right:68px;top:50%;margin-top:-22px;padding:8px 12px;border-radius:12px;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);font:600 13px/1.3 "Schibsted Grotesk",system-ui,sans-serif;white-space:nowrap;box-shadow:0 14px 30px -14px #000a;opacity:0;transform:translateX(8px);transition:opacity .2s,transform .3s var(--spring);pointer-events:none}',
+  '.dock .dlabel{position:absolute;right:68px;top:50%;margin-top:-22px;padding:8px 12px;border-radius:var(--r10);background:var(--panel2);border:1px solid var(--line2);color:var(--ink);font:600 13px/1.3 "Schibsted Grotesk",system-ui,sans-serif;white-space:nowrap;box-shadow:0 14px 30px -14px var(--shadow);opacity:0;transform:translateX(8px);transition:opacity .2s,transform .3s var(--spring);pointer-events:none}',
   '.dock .dlabel span{display:block;font-weight:500;font-size:11.5px;color:var(--ink2)}',
   '.dock:hover .dlabel,.dock .dhex:focus-visible+.dlabel{opacity:1;transform:none}',
   '.dock.left .dlabel{right:auto;left:68px;transform:translateX(-8px)}',
@@ -128,48 +160,52 @@ ctx.CSS += '\n' + [
   '.backlight{position:absolute;left:0;top:0;width:520px;height:520px;margin:-260px 0 0 -260px;border-radius:50%;z-index:4;pointer-events:none;opacity:0;transition:opacity .3s var(--ease),transform .25s var(--ease);background:radial-gradient(circle,var(--blcore) 0%,var(--blmid) 38%,transparent 66%);will-change:transform}',
   '.backlight.on{opacity:1}',
   /* arrange mode */
-  '.arrbtn[aria-pressed=true]{background:var(--honeybg);color:var(--honey);border-color:var(--honey)}',
+  '.arrbtn[aria-pressed=true]{background:var(--honeybg);color:var(--honey);border-color:var(--honeyedge)}',
   '.slotlayer{position:absolute;inset:0;z-index:5;pointer-events:none}',
   '.slotmark{position:absolute;opacity:0;animation:fadeup .3s var(--ease) forwards}',
   '.slotmark svg{display:block;overflow:visible}.slotmark path{fill:var(--well);fill-opacity:.35;stroke:var(--line2);stroke-width:1.6;stroke-dasharray:6 6;transition:stroke .15s,fill .15s}',
-  '.slotmark.hot path{stroke:var(--honey);fill:var(--honeybg);fill-opacity:.8;stroke-dasharray:none;stroke-width:2.2}',
+  '.slotmark.hot path{stroke:var(--honeyedge);fill:var(--honeybg);fill-opacity:.8;stroke-dasharray:none;stroke-width:2.2}',
   '.stage.arranging .cell.canmove{cursor:grab;touch-action:none}',
-  '.stage.arranging .cell.canmove .tl{animation:jig 1.6s ease-in-out infinite;animation-delay:var(--jd,0s)}',
-  '.stage.arranging .cell.canmove .rim{background:var(--honey)}',
+  /* the gentle wobble only in Full motion; Calm and Off show a static honey outline */
+  '.app[data-motion=full] .stage.arranging .cell.canmove .tl{animation:jig 1.6s ease-in-out infinite;animation-delay:var(--jd,0s)}',
+  '.stage.arranging .cell.canmove .rim{background:var(--honeyedge)}',
   '@keyframes jig{0%,100%{rotate:-1.1deg}50%{rotate:1.1deg}}',
-  '.cell.dragging{transition:none!important;z-index:9;cursor:grabbing;filter:drop-shadow(0 26px 26px var(--cellshadow)) drop-shadow(0 0 22px var(--honeyglow))}',
+  '.cell.dragging{transition:none!important;z-index:9;cursor:grabbing;filter:drop-shadow(0 18px 22px var(--cellshadow))}',
   '.cell.dragging .tl{animation:none!important}',
   '.cell.swapme .tl{animation:none!important;--k:.9;opacity:.75}',
-  '.arrbar{position:absolute;left:50%;bottom:22px;z-index:8;display:flex;align-items:center;gap:10px;padding:8px 10px 8px 16px;border-radius:999px;background:var(--panel2);border:1px solid var(--honey);box-shadow:0 20px 40px -20px var(--shadow);color:var(--ink);font-size:13.5px;transform:translate(-50%,20px);opacity:0;pointer-events:none;transition:opacity .25s var(--ease),transform .4s var(--spring);max-width:calc(100% - 40px)}',
+  '.arrbar{position:absolute;left:50%;bottom:22px;z-index:8;display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:8px 10px 8px 16px;border-radius:var(--r14);background:var(--panel2);border:1px solid var(--honeyedge);box-shadow:0 20px 40px -20px var(--shadow);color:var(--ink);font-size:13.5px;transform:translate(-50%,20px);opacity:0;pointer-events:none;transition:opacity .25s var(--ease),transform .4s var(--spring);max-width:calc(100% - 40px)}',
   '.arrbar.on{opacity:1;transform:translate(-50%,0);pointer-events:auto}.arrbar>.ic{color:var(--honey)}',
-  '@media (prefers-reduced-motion:reduce){.stage.arranging .cell.canmove .tl{animation:none}}',
-  /* liquid motion + 3D hover */
+  /* hover depth per motion level. Full: liquid flow + slight 3D tilt and lift (±5°, 14px, one soft shadow, no glow);
+   * Calm: 2px lift + soft shadow; Off: no movement (colour only, see core/styles.js). */
   '.stage.goo{filter:url(#bft-goo)}',
-  '.cell .tl{width:100%;height:100%;transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(var(--z,0px)) scale(var(--k,1));transition:transform .45s var(--spring)}',
-  '.cell:hover:not(.gone) .tl,.cell:focus-visible .tl{--z:42px;--k:1.05;transition:transform .3s var(--spring)}',
-  '.cell.mini:hover:not(.gone) .tl{--z:0px;--k:1.12}',
-  '.cell.ghost:not(.back):hover .tl{--z:0px;--k:1}',
+  '.cell .tl{width:100%;height:100%;transition:transform .2s var(--ease),filter .2s var(--ease)}',
+  '.app[data-motion=full] .cell .tl{transform:perspective(900px) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg)) translateZ(var(--z,0px)) scale(var(--k,1));transition:transform .45s var(--spring),filter .3s var(--ease)}',
+  '.app[data-motion=full] .cell:hover:not(.gone):not(.mini):not(.ghost) .tl,.app[data-motion=full] .cell.ghost.back:hover .tl,.app[data-motion=full] .cell:focus-visible:not(.mini) .tl{--z:14px;--k:1.03;filter:drop-shadow(0 14px 16px var(--cellshadow));transition:transform .3s var(--spring),filter .3s var(--ease)}',
+  '.app[data-motion=full] .cell.mini:hover:not(.gone) .tl{--k:1.1}',
+  '.app[data-motion=full] .cell:hover:not(.gone):not(.mini) .ic{transform:translateY(-2px)}',
+  '.app[data-motion=calm] .cell:hover:not(.gone):not(.mini):not(.ghost) .tl,.app[data-motion=calm] .cell.ghost.back:hover .tl{transform:translateY(-2px);filter:drop-shadow(0 10px 14px var(--cellshadow))}',
+  '.app[data-motion=calm] .cell.mini:hover:not(.gone) .tl{transform:scale(1.06)}',
   '.cell.nope .tl{animation:nope .45s var(--ease)}',
   '@keyframes nope{20%{translate:-8px 0}40%{translate:7px 0}60%{translate:-4px 0}80%{translate:2px 0}}',
   /* hub = the module */
-  '.cell.hub .hn{font-size:19px;font-weight:800;letter-spacing:-.015em;color:var(--honeyink)}',
-  '.cell.hub .hs{font-size:12.5px;color:var(--honeyink2)}.cell.hub .hs b{font-weight:800;color:var(--honeyink)}.cell.hub .hs.low b{color:#B4232F}',
+  '.cell.hub .hn{font-size:var(--t18);font-weight:800;letter-spacing:-.015em;color:var(--honeyink)}',
+  '.cell.hub .hs{font-size:var(--t12);color:var(--honeyink2)}.cell.hub .hs b{font-weight:800;color:var(--honeyink)}.cell.hub .hs.low b{color:#B4232F}',
   '.cell.hub .hw{font-size:11.5px;font-weight:600;color:var(--honeyink2)}',
   '.cell.hub .face{gap:3px}',
   /* module page */
   '.side{transition:opacity .35s var(--ease),transform .45s var(--ease)}.side.off{opacity:0;transform:translateX(-16px);pointer-events:none}',
-  '.modhead{position:absolute;left:0;right:0;top:6vh;text-align:center;z-index:7;pointer-events:none;padding:0 20px;transition:opacity .4s var(--ease),transform .55s var(--ease)}',
+  '.modhead{position:absolute;left:0;right:0;top:5vh;text-align:center;z-index:7;pointer-events:none;padding:0 20px;transition:opacity .4s var(--ease),transform .55s var(--ease)}',
   '.modhead.off{opacity:0;transform:translateY(-14px)}',
-  '.modhead h1{margin:0;font-size:38px;font-weight:800;letter-spacing:-.025em}.modhead p{margin:8px 0 0;color:var(--ink2);font-size:15px}',
+  '.modhead h1{margin:0;font-size:var(--t32);font-weight:700;letter-spacing:-.02em}.modhead p{margin:6px 0 0;color:var(--ink2);font-size:var(--t15)}',
   '.modfoot{position:absolute;left:0;right:0;bottom:5vh;display:flex;flex-direction:column;align-items:center;gap:8px;z-index:7;transition:opacity .4s var(--ease),transform .55s var(--ease)}',
-  '.modfoot.off{opacity:0;transform:translateY(12px);pointer-events:none}',
-  '.modfoot .check{padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel)}',
-  '.keyhint{font-size:12px;color:var(--ink3);display:flex;flex-wrap:wrap;gap:4px 12px}.keyhint span{white-space:nowrap}.modfoot .keyhint{justify-content:center}.keyhint kbd{font:600 11px ui-monospace,Consolas,monospace;padding:1px 5px;border:1px solid var(--line2);border-radius:5px;color:var(--ink2)}',
+  '.modfoot.off{opacity:0;transform:translateY(12px);pointer-events:none;visibility:hidden;transition:opacity .4s var(--ease),transform .55s var(--ease),visibility 0s .4s}',
+  '.modfoot .check{padding:7px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel)}',
+  '.keyhint{font-size:12px;color:var(--ink3);display:flex;flex-wrap:wrap;gap:4px 12px}.keyhint span{white-space:nowrap}.modfoot .keyhint{justify-content:center}.keyhint kbd{font:600 11px var(--mono);padding:1px 5px;border:1px solid var(--line2);border-radius:5px;color:var(--ink2)}',
   '.cell.mod .face{background:var(--modface);gap:8px;padding:0 40px}',
-  '.cell.mod .nm{font-size:23px;font-weight:800;letter-spacing:-.01em}',
-  '.cell.mod .ds{font-size:13px;color:var(--ink2);line-height:1.4;transition:color .2s}',
+  '.cell.mod .nm{font-size:20px;font-weight:700;letter-spacing:-.01em}',
+  '.cell.mod .ds{font-size:var(--t13);color:var(--ink2);line-height:1.4;transition:color .2s}',
   '.cell.mod .ic{color:var(--blue3)}',
-  '.cell.mod .mpill{margin-top:4px;font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;background:var(--bluebg);color:var(--blue3);transition:background .2s,color .2s}',
+  '.cell.mod .mpill{margin-top:4px;font-size:var(--t12);font-weight:600;padding:3px 10px;border-radius:999px;background:var(--bluebg);color:var(--blue3);transition:background .2s,color .2s}',
   '.cell.mod.soon{cursor:not-allowed}.cell.mod.soon .mpill{background:var(--chipbg);color:var(--ink2)}',
   '.cell.mod.soon .face>*{opacity:.6;transition:opacity .2s}',
   '.cell.mod:hover:not(.gone) .face,.cell.mod:focus-visible .face{background:var(--honeygrad)}',
@@ -177,6 +213,138 @@ ctx.CSS += '\n' + [
   '.cell.mod:hover:not(.gone) .nm,.cell.mod:hover:not(.gone) .ic,.cell.mod:focus-visible .nm,.cell.mod:focus-visible .ic{color:var(--honeyink)}',
   '.cell.mod:hover:not(.gone) .ds,.cell.mod:focus-visible .ds{color:var(--honeyink2)}',
   '.cell.mod:hover:not(.gone) .mpill,.cell.mod:focus-visible .mpill{background:#2A1A0024;color:var(--honeyink)}'
+].join('\n');
+
+/* ---------- v3.8 refinement (Stage 4 design) ----------
+ * Radii 4 / 6 / 8 / 12 (the v3.7 names --r10 / --r14 now mean 8 / 12), controls 26 / 32 / 36px high, page titles 22px.
+ * Honey marks where you are and what is selected (tabs, current row, palette selection, current step); blue is for
+ * actions. Mono stays the v3.7 system stack and is used only for machine text. */
+ctx.CSS += '\n' + [
+  '.app{--r4:4px;--r8:8px;--r12:12px;--r10:8px;--r14:12px}',
+  'kbd{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 4px;border-radius:4px;border:1px solid var(--line2);border-bottom-width:2px;background:var(--panel2);font:500 10.5px/1 var(--mono);color:var(--ink2)}',
+  '.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}',
+  /* controls */
+  '.btn{min-height:32px;padding:0 12px;border-radius:var(--r6)}',
+  '.btn.sm{min-height:26px;padding:0 8px;gap:5px}',
+  '.lcard button.btn.primary[type=submit]{min-height:36px}',
+  '.input{min-height:32px;border-radius:var(--r6)}',
+  '.btn[aria-disabled=true]{opacity:.45;cursor:not-allowed}',
+  '.btn[aria-disabled=true]:hover{background:var(--panel);border-color:var(--line2)}.btn.primary[aria-disabled=true]:hover{background:var(--blue);border-color:var(--blue)}.btn.quiet[aria-disabled=true]:hover{background:none;border-color:transparent}',
+  '.ph h1{font-size:22px;letter-spacing:-.02em}',
+  '.side h1{font-size:22px}.side h2{font-size:17px}',
+  '.tab::after{background:var(--honeyedge);border-radius:2px 2px 0 0}',
+  '.rec.on{background:var(--honeybg)}',
+  /* top bar */
+  '.topsearch{display:flex;align-items:center;gap:8px;height:32px;width:clamp(200px,22vw,300px);padding:0 6px 0 10px;border-radius:var(--r8);border:1px solid var(--line);background:var(--well);color:var(--ink3);font-size:var(--t13);flex:0 1 auto;min-width:0;transition:border-color .15s,color .15s}',
+  '.topsearch:hover{border-color:var(--line2);color:var(--ink2)}',
+  '.topsearch .tsl{flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+  '.winctl{display:flex;gap:2px;padding-left:6px;border-left:1px solid var(--line)}',
+  '.app[data-vp=tab] .topsearch{width:190px}',
+  '.app[data-vp=narrow] .topsearch{width:34px;height:34px;padding:0;justify-content:center;border-color:transparent;background:none;color:var(--ink2)}',
+  '.app[data-vp=narrow] .topsearch :is(.tsl,kbd){display:none}',
+  '.app[data-vp=narrow] .winctl{padding-left:2px;border-left:0}',
+  /* honeycomb toolbar: Arrange + view switch */
+  '.combar{position:absolute;right:16px;top:14px;z-index:8;display:flex;align-items:center;gap:8px}',
+  '.combar[hidden],.app[data-vp=narrow] .combar{display:none}',
+  '.combar .arrbtn{min-height:32px;background:var(--panel)}',
+  '.combar .arrbtn[aria-pressed=true]{background:var(--honeybg);color:var(--honey);border-color:var(--honeyedge)}',
+  /* area number keys */
+  '.cell .akey{position:absolute;top:13%;right:24%;opacity:0;transition:opacity .15s;pointer-events:none;z-index:1}',
+  '.cell .akey kbd{background:var(--panel);color:var(--ink2)}',
+  '.stage[data-level=home] .cell.area:not(.gone):not(.mini):hover .akey,.stage[data-level=home] .cell.area:not(.gone):focus-visible .akey,.app.keys .stage[data-level=home] .cell.area:not(.gone):not(.mini) .akey{opacity:1}',
+  '.app.nokeys .akey,.app.nokeys .kh{display:none!important}',
+  /* menus */
+  '.menu{z-index:60;min-width:240px;padding:4px;border-radius:var(--r8)}',
+  '.menu.up{top:auto;bottom:calc(100% + 8px)}',
+  '.menu button{align-items:center;min-height:32px;padding:6px 8px}',
+  '.menu button:focus-visible{outline:none;background:var(--panel3);box-shadow:inset 0 0 0 2px var(--focusring)}',
+  '.menu button.on{background:var(--honeybg)}',
+  '.menu button[aria-disabled=true]{opacity:.55;cursor:not-allowed}.menu button[aria-disabled=true]:hover{background:none}',
+  '.menu button>small{margin-left:auto;padding-left:12px;font-size:var(--t12);color:var(--ink3);white-space:nowrap}',
+  '.menu button>div{min-width:0}',
+  '.menu .hd{padding:6px 10px 4px;font-size:11.5px;font-weight:600;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}',
+  '.menu hr{border:0;height:1px;background:var(--line);margin:4px}',
+  '.menu button.danger b,.menu button.danger .ic{color:var(--bad)}',
+  '.menu .mchk{width:16px;display:inline-flex;color:var(--blue3);visibility:hidden}.menu button[aria-checked=true] .mchk{visibility:visible}',
+  /* toasts: ok = something happened on your computer, warn, bad = error */
+  '.toasts{z-index:70}',
+  '.toast{border-left:3px solid var(--line2)}.toast.ok{border-left-color:var(--ok)}.toast.warn{border-left-color:var(--honeyedge)}.toast.bad{border-left-color:var(--bad)}',
+  /* dialogs */
+  '.dlg.codedlg{width:min(700px,100%)}',
+  'pre.code.numbered{counter-reset:ln;padding:10px 12px 10px 0;white-space:pre;word-break:normal;max-height:50vh}',
+  'pre.code.numbered .ln{display:block;min-height:1.5em;counter-increment:ln}',
+  'pre.code.numbered .ln::before{content:counter(ln);display:inline-block;width:34px;margin-right:12px;text-align:right;color:var(--ink3);user-select:none}',
+  '.keysdlg .keylist{display:grid;margin-top:6px}',
+  '.keysdlg .krow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line);font-size:var(--t13)}',
+  '.keysdlg .krow.off{color:var(--ink3)}.keysdlg .kk{display:flex;gap:4px;align-items:center;flex:none;color:var(--ink3)}',
+  '.keysdlg .acts{justify-content:space-between}',
+  /* Appearance: keyboard switches */
+  '.swrow{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px 0}',
+  '.swrow+.swrow{border-top:1px solid var(--line)}',
+  '.swrow b{display:block;font-weight:600}.swrow span{display:block;font-size:var(--t12);color:var(--ink2)}.swrow.dis b{color:var(--ink3)}',
+  '.switch{position:relative;width:32px;height:18px;flex:none;border-radius:9px;background:var(--line2);border:0;padding:0;transition:background .15s}',
+  '.switch::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;transition:transform .15s var(--ease);box-shadow:0 1px 2px rgba(0,0,0,.3)}',
+  '.switch[aria-checked=true]{background:var(--blue)}.switch[aria-checked=true]::after{transform:translateX(14px)}',
+  '.switch[aria-disabled=true]{opacity:.45;cursor:not-allowed}',
+  /* palette */
+  '.pal{display:flex;flex-direction:column;max-height:min(580px,82vh)}',
+  '.pal ul{flex:1;min-height:0;max-height:none}',
+  '.pal .gh{padding:10px 8px 4px;font-size:11.5px;font-weight:600;color:var(--ink3)}',
+  '.pal li{position:relative}',
+  '.pal li button{position:relative;min-height:38px}',
+  '.pal li button .gl{width:24px;height:24px;border-radius:var(--r6);display:grid;place-items:center;background:var(--panel3);color:var(--ink2);flex:none;overflow:visible}',
+  '.pal li button .gl.hexg{clip-path:var(--hex);border-radius:0;width:22px;height:25px}',
+  '.pal li button b mark{background:none;color:var(--honey);font-weight:700}',
+  '.pal li button:hover{background:var(--rowhover)}',
+  '.pal li button[aria-selected=true]{background:var(--panel3)}',
+  '.pal li button[aria-selected=true]::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--honeyedge)}',
+  '.pal li button[aria-selected=true] .gl{background:var(--honeybg);color:var(--honey)}',
+  '.pal li button em{display:flex;align-items:center;gap:4px}.pal li button em kbd{height:16px;font-size:10px}',
+  '.pal li button code{font:12px var(--mono);color:var(--ink3)}',
+  '.pal .scope{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 4px 0 8px;border-radius:5px;background:var(--honeybg);color:var(--honey);font-weight:600;font-size:var(--t12);flex:none;white-space:nowrap}',
+  '.pal .scope[hidden]{display:none}',
+  '.pal .scope button{border:0;background:none;color:inherit;padding:0;width:16px;height:16px;display:grid;place-items:center}',
+  '.pal .pf{display:flex;align-items:center;gap:14px;min-height:38px;padding:6px 14px;border-top:1px solid var(--line);background:var(--panel);font-size:var(--t12);color:var(--ink3);flex-wrap:wrap}',
+  '.pal .pf span{display:inline-flex;align-items:center;gap:3px}.pal .pf .grow{flex:1}',
+  '.pal .uimenu{top:calc(100% + 2px)}',
+  '@media (max-width:560px){.pal li button .gl{display:grid}.pal .pf{display:none}}',
+  '.m{display:inline-grid;place-items:center;min-width:40px;height:18px;padding:0 4px;border-radius:var(--r4);font:600 10px/1 var(--mono);border:1px solid currentColor}',
+  '.m.GET{color:var(--ok)}.m.POST{color:var(--blue3)}.m.PUT,.m.PATCH{color:var(--honey)}.m.DELETE{color:var(--bad)}',
+  /* tables */
+  '.twrap:focus-visible{outline:2px solid var(--focusring);outline-offset:2px}',
+  'th .sortbtn{border:0;background:none;padding:0;color:inherit;font:inherit;display:inline-flex;align-items:center;gap:4px}',
+  'th .sortbtn:hover{color:var(--ink)}',
+  'th .sarr{opacity:.4;font-size:11px}th[aria-sort=ascending] .sarr,th[aria-sort=descending] .sarr{opacity:1;color:var(--blue3)}',
+  '.bool{display:inline-flex;align-items:center;gap:6px;color:var(--ink2)}.bool i{width:6px;height:6px;border-radius:50%;background:var(--line2)}.bool.y{color:var(--ink)}.bool.y i{background:var(--ok)}',
+  'tr.none td{padding:0}tr.none:hover{background:none}',
+  '.tnone{display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 16px;color:var(--ink2);white-space:normal}.tnone b{color:var(--ink);font-weight:600}',
+  'td.num,th.num{text-align:right}',
+  '.iconbtn.rowmenu{width:28px;height:28px;opacity:0}tbody tr:hover .rowmenu,.rowmenu:focus-visible,.rowmenu[aria-expanded=true]{opacity:1}',
+  '.tbar .clearsel[hidden],.tbar .acts:empty{display:none}',
+  '.skel{border:1px solid var(--line);border-radius:var(--r12);background:var(--panel);padding:12px 16px}',
+  '.skelt{display:flex;align-items:center;gap:10px;color:var(--ink2);margin-bottom:6px}',
+  '.skr{display:flex;gap:16px;padding:10px 0;border-top:1px solid var(--line)}',
+  '.skr i{display:block;height:10px;border-radius:3px;background:var(--panel3);animation:skp 1.4s ease-in-out infinite}',
+  '@keyframes skp{50%{opacity:.45}}',
+  '.app[data-motion=off] .skr i{animation:none!important}'
+].join('\n');
+
+/* ---------- v3.9: write flow, split buttons, sign-in ---------- */
+ctx.CSS += '\n' + [
+  '.split{display:inline-flex;align-items:stretch}',
+  '.split>.btn:first-child{border-top-right-radius:0;border-bottom-right-radius:0}',
+  '.split>.splitmore{border-top-left-radius:0;border-bottom-left-radius:0;padding:0 7px;margin-left:-1px}',
+  '.split>.splitmore.primary{border-left:1px solid rgba(255,255,255,.35)}',
+  '.split>.btn.quiet:first-child+.splitmore{border-left:1px solid var(--line)}',
+  '.step{position:relative}',
+  '.step .steplink{position:absolute;inset:-5px -7px;border:0;background:none;border-radius:var(--r6);padding:0;cursor:pointer}',
+  '.step.pick:hover span,.step.pick:focus-within span{color:var(--ink);text-decoration:underline;text-underline-offset:3px}',
+  '.step.pick:hover .hx{background:var(--blue3)}',
+  '.reportbox{margin-top:12px}',
+  '.run .pbar{height:4px;border:0;background:var(--panel3)}',
+  '.runt{display:flex;align-items:center;gap:8px;min-width:0}.pchip[hidden]{display:none}',
+  '.runh{align-items:center}',
+  '.capsnote{display:flex;align-items:center;gap:6px;margin:-6px 0 8px;font-size:var(--t12);color:var(--honey)}.capsnote[hidden]{display:none}'
 ].join('\n');
 
 var VIEWS = [['honeycomb', 'hexgrid', 'Honeycomb'], ['gallery', 'cards', 'Gallery'], ['cards', 'layers', 'Cards'], ['list', 'list', 'List']];
@@ -217,20 +385,133 @@ function toolSlots(area) {
 }
 function initials(n) { n = String(n || '?').replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean); return ((n[0] || '?')[0] + ((n[1] || '')[0] || '')).toUpperCase(); }
 
-/* ---------------- theme (dark / light / system, remembered per browser) ---------------- */
+/* ---------------- appearance: theme (system / light / dark) + motion (full / calm / off) ----------------
+ * Stored per browser in bft.theme, bft.motion, bft.motionFollow (core/util.js). A saved theme from earlier versions
+ * keeps working; browsers with no saved theme follow the system. */
 var Theme = {
-  pref: function () { var v = U.store.get('theme', 'dark'); return ['dark', 'light', 'system'].indexOf(v) >= 0 ? v : 'dark'; },
-  resolved: function () { var p = this.pref(); return p === 'system' ? (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : p; },
-  apply: function () {
-    if (!ctx.appEl) return;
-    ctx.appEl.setAttribute('data-theme', this.resolved());
-    Array.prototype.forEach.call(ctx.root.querySelectorAll('.themebtn'), function (b) { Theme.paint(b); });
+  pref: function () { return U.themeChoice(); },
+  resolved: function () {
+    var p = this.pref();
+    if (p !== 'system') return p;
+    try { return window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; } catch (e) { return 'dark'; }
   },
-  next: function () { var order = ['dark', 'light', 'system']; U.store.set('theme', order[(order.indexOf(this.pref()) + 1) % 3]); this.apply(); UI.toast({ dark: 'Dark mode', light: 'Light mode', system: 'Follows your system setting' }[this.pref()]); },
-  paint: function (b) { var p = this.pref(); U.swap(b, U.icon(p === 'dark' ? 'moon' : p === 'light' ? 'sun' : 'monitor', 18)); b.title = 'Theme: ' + p + ' (click to change)'; b.setAttribute('aria-label', b.title); },
-  button: function () { var b = h('button.iconbtn.themebtn', { type: 'button', onclick: function () { Theme.next(); } }); this.paint(b); return b; }
+  set: function (v) { var ok = U.setPref('theme', v); this.apply(); return ok; },
+  apply: function () { if (ctx.appEl) ctx.appEl.setAttribute('data-theme', this.resolved()); }
 };
-if (window.matchMedia) try { matchMedia('(prefers-color-scheme: light)').addEventListener('change', function () { if (Theme.pref() === 'system') Theme.apply(); }); } catch (e) {}
+function motion() { return U.motion(); }
+function applyMotion() {
+  if (!ctx.appEl) return;
+  var m = motion(), was = ctx.appEl.getAttribute('data-motion');
+  ctx.appEl.setAttribute('data-motion', m);
+  if (was && was !== m) {
+    Goo.t = 0;
+    Object.keys(cells).forEach(function (k) { untilt(cells[k]); stopAnims(cells[k]); });
+    if (m === 'off') lightShow();
+  }
+}
+// Both system settings are watched once per page (each bookmark click re-runs this file, so the listeners call
+// whatever load is current instead of piling up); an open Appearance dialog redraws with the new state.
+window.__bftSys = function (kind) {
+  if (kind === 'theme' && Theme.pref() === 'system') Theme.apply();
+  if (kind === 'motion') applyMotion();
+  if (R.appearDraw) R.appearDraw();
+};
+if (window.matchMedia && !window.__bftSysOn) {
+  window.__bftSysOn = true;
+  try { matchMedia('(prefers-color-scheme: light)').addEventListener('change', function () { if (window.__bftSys) window.__bftSys('theme'); }); } catch (e) {}
+  try { matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', function () { if (window.__bftSys) window.__bftSys('motion'); }); } catch (e) {}
+}
+function appearanceButton() {
+  return h('button.iconbtn.appearbtn', { type: 'button', title: 'Appearance — theme and motion', 'aria-label': 'Appearance', 'aria-haspopup': 'dialog', onclick: function () { openAppearance(); } }, U.icon('sliders', 18));
+}
+var MOTION_TXT = {
+  full: 'Cells flow on a spring and briefly merge while they move; hexagons lift and tilt slightly under the pointer.',
+  calm: 'Short, settled movement: what stays on screen glides into place and new cells fade in where they belong.',
+  off: 'No movement. Screens change with a short fade; hover and selection still show the honey edge.'
+};
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+/* Appearance dialog (user menu, top bar, sign-in card). Choosing Full or Calm while the system asks for reduced motion
+ * needs an explicit confirmation; "Follow system again" hands control back to the system setting. */
+function openAppearance() {
+  closeMenus();
+  if (R.appearOpen || !ctx.appEl) return;
+  R.appearOpen = true;
+  // UI.dialog restores focus to document.activeElement, which is the shadow host; remember the real button
+  var opener = ctx.root.activeElement;
+  return UI.dialog(function (box, close) {
+    box.classList.add('appear');
+    box.setAttribute('aria-label', 'Appearance');
+    var msg = h('div.err', { role: 'status' });
+    function saved(ok) { msg.textContent = ok ? '' : 'This browser blocked saving. The choice applies until APIary is closed.'; }
+    function seg(key, label, opts, cur, pick) {
+      return h('div.wseg', { role: 'radiogroup', 'aria-label': label, 'data-k': key }, opts.map(function (o) {
+        return h('button', { type: 'button', role: 'radio', 'aria-checked': o[0] === cur ? 'true' : 'false', onclick: function () { pick(o[0]); } }, o[1]);
+      }));
+    }
+    function refocus(sel) { if (!sel) return; var f = box.querySelector(sel); if (f) f.focus(); }
+    function pickMotion(v) {
+      if (v !== 'off' && U.osReducedMotion() && U.motionFollow()) return confirmOverride(v);
+      saved(U.setMotion(v)); applyMotion(); main('[data-k=motion] [aria-checked=true]');
+    }
+    function confirmOverride(v) {
+      var keep = h('button.btn.quiet', { type: 'button', onclick: function () { main('[data-k=motion] [aria-checked=true]'); } }, 'Keep reduced motion');
+      U.swap(box,
+        h('h2', 'Your system asks for reduced motion'),
+        h('p.muted', 'Your operating system is set to reduce motion. Use ', h('b', cap(v)), ' motion in APIary anyway? You can choose “Follow system again” in Appearance at any time.'),
+        h('div.acts', keep, h('button.btn.primary.overridebtn', { type: 'button', onclick: function () { saved(U.setMotion(v, false)); applyMotion(); main('[data-k=motion] [aria-checked=true]'); } }, 'Use ' + cap(v) + ' anyway')));
+      keep.focus();
+    }
+    function main(focusSel) {
+      var tp = Theme.pref(), eff = motion(), os = U.osReducedMotion(), follow = U.motionFollow(), choice = U.motionChoice();
+      var note = null;
+      if (os && follow) note = h('div.sysnote', U.icon('monitor', 16), h('div', 'Your system asks for reduced motion, so APIary uses ', h('b', 'Off'), '. Choosing Full or Calm asks first.'));
+      else if (!follow) note = h('div.sysnote', U.icon('monitor', 16), h('div',
+        os ? ['You chose ', h('b', cap(choice)), ' although your system asks for reduced motion.'] : ['Your system’s reduced-motion setting is overridden: APIary keeps ', h('b', cap(choice)), ' if the system asks for less motion.'],
+        h('button.linkbtn.followbtn', { type: 'button', onclick: function () { saved(U.setPref('motionFollow', true)); applyMotion(); main('[data-k=motion] [aria-checked=true]'); } }, 'Follow system again')));
+      var kOn = U.areaKeys();
+      function sw(key, title, desc, on, pick, reason) {
+        var b = h('button.switch', { type: 'button', role: 'switch', 'aria-checked': on ? 'true' : 'false', 'aria-label': title, 'data-k': key, title: reason || null, 'aria-disabled': reason ? 'true' : null,
+          onclick: function () { if (reason) return; pick(b.getAttribute('aria-checked') !== 'true'); } });
+        return h('div.swrow' + (reason ? '.dis' : ''), h('div', h('b', title), h('span', desc)), b);
+      }
+      var keysOpt = h('div.opt', h('div.lab', 'Keyboard', h('span', kOn ? '1–8 open areas' : 'Number keys off')),
+        sw('akeys', 'Area number shortcuts', 'Press 1–8 on the home honeycomb to open an area. Ignored while you type in a field.', kOn,
+          function (v) { saved(U.setPref('areaKeys', v)); applyKeyPrefs(); if (S.level === 'home') drawHomePane(); main('[data-k=akeys]'); }),
+        sw('abadge', 'Always show numbers on hexagons', kOn ? 'Otherwise they appear when you point at or focus an area.' : 'Turn on area number shortcuts first.', kOn && U.areaKeyBadges(),
+          function (v) { saved(U.setPref('areaKeyBadges', v)); applyKeyPrefs(); main('[data-k=abadge]'); }, kOn ? null : 'Area number shortcuts are off'));
+      var demo = h('div.apdemo', { 'aria-hidden': 'true' });
+      for (var i = 0; i < 5; i++) { var el = h('i' + (i === 2 ? '.h' : '')); el.style.left = (40 + i * 58) + 'px'; demo.appendChild(el); }
+      U.swap(box,
+        h('h2', 'Appearance'),
+        h('p.muted', { style: { margin: 0 } }, 'Saved in this browser.'),
+        h('div.opt', h('div.lab', 'Theme', h('span', tp === 'system' ? 'Following system · ' + cap(Theme.resolved()) : '')),
+          seg('theme', 'Theme', [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']], tp, function (v) { saved(Theme.set(v)); main('[data-k=theme] [aria-checked=true]'); })),
+        h('div.opt', h('div.lab', 'Motion', h('span', os && follow ? 'Reduced by your system' : '')),
+          seg('motion', 'Motion', [['full', 'Full'], ['calm', 'Calm'], ['off', 'Off']], eff, pickMotion),
+          h('div.optdesc', MOTION_TXT[eff]), note, demo),
+        keysOpt,
+        msg,
+        h('div.acts', h('button.btn.sm', { type: 'button', onclick: function () { playDemo(demo); } }, U.icon('retry', 14), 'Replay'), h('span', { style: { flex: '1' } }),
+          h('button.btn.primary', { type: 'button', onclick: function () { close(true); } }, 'Done')));
+      playDemo(demo);
+      refocus(focusSel);
+    }
+    R.appearDraw = function () { main(); };
+    main();
+  }).then(function () {
+    R.appearOpen = false; R.appearDraw = null;
+    setTimeout(function () { if (opener && opener.isConnected) try { opener.focus(); } catch (e) {} }, 220);
+  });
+}
+function playDemo(d) {
+  var m = motion();
+  Array.prototype.forEach.call(d.querySelectorAll('i'), function (c, i) {
+    if (!c.animate) return;
+    if (m === 'full') c.animate([{ transform: 'translateX(' + (2 - i) * 58 + 'px) scale(.3)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 800, easing: 'cubic-bezier(.45,1.35,.4,1)', delay: i * 45, fill: 'backwards' });
+    else if (m === 'calm') c.animate([{ transform: 'scale(.94)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 280, easing: 'cubic-bezier(.22,1,.36,1)', delay: 60 + Math.abs(i - 2) * 24, fill: 'backwards' });
+    else c.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 120, fill: 'backwards' });
+  });
+}
 
 /* ---------------- mount ---------------- */
 function mount() {
@@ -242,10 +523,11 @@ function mount() {
   // Tools loaded later add their own styles here (once per key).
   var added = {};
   ctx.addCSS = function (key, css) { if (added[key]) return; added[key] = 1; R.style.textContent += '\n' + css; };
-  var app = h('div.app');
+  // theme, motion and screen size are set before the first paint (.app stays transparent until 'in')
+  var app = h('div.app', { 'data-theme': Theme.resolved(), 'data-motion': motion(), 'data-vp': vpOf(window.innerWidth) });
   root.appendChild(app);
   ctx.host = host; ctx.root = root; ctx.appEl = app;
-  Theme.apply();
+  Theme.apply(); applyMotion(); setVp(); applyKeyPrefs();
   R.toasts = h('div.toasts');
   app.appendChild(R.toasts);
   app.style.setProperty('--dockhex', 'path("' + hexPath(58, 66) + '")');
@@ -260,7 +542,7 @@ function mount() {
  * steps aside. A honey button (draggable, position remembered) brings it back; so does clicking the bookmark. */
 function buildDock() {
   R.dockIco = h('span');
-  R.dockHex = h('button.dhex', { type: 'button', 'aria-label': 'Open APIary' }, R.dockIco);
+  R.dockHex = h('button.dhex', { type: 'button', 'aria-label': 'Open APIary', tabIndex: -1 }, R.dockIco);   // focusable only while minimized
   R.dockLabel = h('div.dlabel');
   R.dock = h('div.dock', { 'aria-hidden': 'true' }, R.dockHex, R.dockLabel);
   ctx.appEl.appendChild(R.dock);
@@ -307,13 +589,13 @@ function minimize() {
   hidePeek(); hideTip(); closeMenus();
   dockText(); R.placeDock();
   ctx.appEl.classList.add('min');
-  R.dock.setAttribute('aria-hidden', 'false');
+  R.dock.setAttribute('aria-hidden', 'false'); R.dockHex.tabIndex = 0;
   R.minimized = true;
 }
 function restore() {
   if (!ctx.appEl) return;
   ctx.appEl.classList.remove('min');
-  R.dock.setAttribute('aria-hidden', 'true');
+  R.dock.setAttribute('aria-hidden', 'true'); R.dockHex.tabIndex = -1;
   R.minimized = false;
   if (S.level !== 'login' && S.level !== 'tool') layout({ instant: true });
 }
@@ -327,14 +609,17 @@ function showLogin(msg, forceSetup) {
   R.toolbar = null;
 
   var env = U.store.get('env', 'production');
-  var deco = h('div.lhex');
+  var deco = h('div.lhex'), mo = motion();
   [[0.14, 0.2, ''], [0.22, 0.42, 'b'], [0.08, 0.62, ''], [0.8, 0.18, ''], [0.88, 0.4, 'y'], [0.74, 0.62, 'b'], [0.9, 0.8, ''], [0.18, 0.84, '']].forEach(function (p, i) {
     var el = h('i' + (p[2] ? '.' + p[2] : ''));
     el.style.left = 'calc(' + (p[0] * 100) + '% - 75px)';
     el.style.top = 'calc(' + (p[1] * 100) + '% - 86px)';
-    el.style.transition = 'transform 1.2s var(--ease), opacity 1.2s';
-    el.style.transform = 'scale(.6) rotate(-8deg)'; el.style.opacity = '0';
-    setTimeout(function () { el.style.transform = ''; el.style.opacity = ''; }, 60 + i * 70);
+    // the background hexagons settle in: full = the original slow bloom, calm = a short fade-in, off = already there
+    if (mo !== 'off') {
+      el.style.transition = mo === 'full' ? 'transform 1.2s var(--ease), opacity 1.2s' : 'transform .5s var(--settle), opacity .5s';
+      el.style.transform = mo === 'full' ? 'scale(.6) rotate(-8deg)' : 'scale(.94)'; el.style.opacity = '0';
+      setTimeout(function () { el.style.transform = ''; el.style.opacity = ''; }, mo === 'full' ? 60 + i * 70 : 40 + i * 30);
+    }
     deco.appendChild(el);
   });
 
@@ -347,8 +632,12 @@ function showLogin(msg, forceSetup) {
   var pass = UI.input({ type: 'password', placeholder: 'Password' });
   pass.autocomplete = 'current-password';
   var eye = h('button', { type: 'button', title: 'Show password', 'aria-label': 'Show password' }, U.icon('eye', 18));
-  eye.onclick = function () { pass.type = pass.type === 'password' ? 'text' : 'password'; pass.focus(); };
-  var err = h('div.err', msg || '');
+  eye.onclick = function () { var show = pass.type === 'password'; pass.type = show ? 'text' : 'password'; eye.title = show ? 'Hide password' : 'Show password'; eye.setAttribute('aria-label', eye.title); eye.setAttribute('aria-pressed', show ? 'true' : 'false'); pass.focus(); };
+  var err = h('div.err', { role: 'alert' }, msg || '');
+  // v3.9: Caps Lock hint while typing the password
+  var caps = h('div.capsnote', { hidden: true, role: 'status' }, U.icon('key', 14), 'Caps Lock is on');
+  ['keydown', 'keyup'].forEach(function (ev) { pass.addEventListener(ev, function (e) { if (e.getModifierState) caps.hidden = !e.getModifierState('CapsLock'); }); });
+  pass.addEventListener('blur', function () { caps.hidden = true; });
   var go = h('button.btn.primary', { type: 'submit', style: { width: '100%', marginTop: '4px' } }, h('span', 'Sign in'));
 
   var form = h('form', { novalidate: true },
@@ -358,7 +647,7 @@ function showLogin(msg, forceSetup) {
     h('div.seg', segP, segU),
     UI.field('Username', user),
     UI.field('Password', h('div.pw', pass, eye)),
-    err, go,
+    caps, err, go,
     h('div.lfoot', h('span', 'v' + ctx.CONFIG.VERSION), auditBadge(),
       h('button.linkbtn', { type: 'button', onclick: function () { openSetup(false); } }, 'Sign-in & audit setup')));
   form.addEventListener('submit', async function (e) {
@@ -376,17 +665,13 @@ function showLogin(msg, forceSetup) {
         ctx.adminConsole = true;
         Api.state.user = ctx.AdminLogin.username() || 'admin'; Api.state.env = null; Api.state.token = null;
         ctx.Audit.startSession('Admin console', 'Admin console (' + location.host + ')');
-        R.login.style.transition = 'opacity .35s var(--ease), transform .45s var(--ease)';
-        R.login.style.opacity = '0'; R.login.style.transform = 'scale(.98)';
-        setTimeout(function () { buildMain(true); }, U.reducedMotion() ? 0 : 280);
+        leaveLogin();
         return;
       }
       await Api.signIn(env, user.value.trim(), pass.value);
       U.store.set('env', env); U.store.set('user', user.value.trim());
       ctx.Audit.startSession(user.value.trim(), Api.envLabel());
-      R.login.style.transition = 'opacity .35s var(--ease), transform .45s var(--ease)';
-      R.login.style.opacity = '0'; R.login.style.transform = 'scale(.98)';
-      setTimeout(function () { buildMain(true); }, U.reducedMotion() ? 0 : 280);
+      leaveLogin();
     } catch (ex) {
       U.swap(err, ex.message);
       if (ex.code === 'NO_CLIENT' || ex.code === 'BAD_CLIENT') err.appendChild(h('div', h('button.linkbtn', { type: 'button', onclick: function () { openSetup(false); } }, 'Check the sign-in client setup →')));
@@ -394,7 +679,7 @@ function showLogin(msg, forceSetup) {
       form.animate && !U.reducedMotion() && form.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 260 });
     }
   });
-  var close = h('div', { style: { position: 'absolute', right: '20px', top: '18px', display: 'flex', gap: '6px' } }, Theme.button(),
+  var close = h('div', { style: { position: 'absolute', right: '16px', top: '14px', display: 'flex', gap: '6px' } }, appearanceButton(),
     h('button.iconbtn', { type: 'button', title: 'Close', onclick: hide }, U.icon('x', 18)));
   var card = h('div.lcard', form);
   R.login = h('div.login', deco, card, close);
@@ -415,6 +700,15 @@ function showLogin(msg, forceSetup) {
   else setTimeout(function () { (user.value ? pass : user).focus(); }, 50);
 }
 function restart(el) { el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; }
+/* Signed in: the card fades out (not in Off motion), then the main shell is built. */
+function leaveLogin() {
+  var off = U.reducedMotion();
+  if (!off) {
+    R.login.style.transition = motion() === 'full' ? 'opacity .35s var(--ease), transform .45s var(--ease)' : 'opacity .2s var(--ease), transform .24s var(--settle)';
+    R.login.style.opacity = '0'; R.login.style.transform = 'scale(.98)';
+  }
+  setTimeout(function () { buildMain(true); }, off ? 0 : motion() === 'full' ? 280 : 180);
+}
 
 /* Small status chip for the audit webhook in this browser. */
 function auditBadge() {
@@ -505,25 +799,31 @@ function buildMain(fromLogin) {
   var st = Api.state;
   R.crumb = h('div.crumb');
   R.env = ctx.adminConsole ? h('div.envpill.adm', h('i'), 'Admin console') : h('div.envpill' + (st.env === 'uat' ? '.uat' : ''), h('i'), Api.envLabel());
-  var who = h('button.who', { type: 'button', title: 'Signed in as ' + st.user, 'aria-haspopup': 'menu', onclick: function (e) { e.stopPropagation(); userMenu(whoWrap); } }, h('div.av', initials(st.user)), h('span', st.user));
+  var who = h('button.who', { type: 'button', title: 'Signed in as ' + st.user, 'aria-haspopup': 'menu', 'aria-expanded': 'false', onclick: function (e) { e.stopPropagation(); userMenu(who); } }, h('div.av', initials(st.user)), h('span', st.user));
   var whoWrap = h('div.modwrap', who);
-  R.modPill = h('div.modwrap');
+  R.modPill = h('div.modwrap.modslot');
   R.viewSw = h('div.viewsw', { role: 'group', 'aria-label': 'View' });
+  R.backBtn = h('button.iconbtn.backbtn', { type: 'button', title: 'Back (Esc)', 'aria-label': 'Back', hidden: true, onclick: function () { back(); } }, U.icon('back', 18));
+  // v3.8: a search field instead of the icon; Arrange and the view switch live on the honeycomb (R.combar);
+  // Minimize and Close form one window-controls group at the far right.
   var top = h('div.top',
     h('div.brand', h('div.mark'), 'APIary'),
-    R.modPill, R.crumb, h('span.topgap'), R.viewSw, R.env, whoWrap,
-    h('button.iconbtn', { type: 'button', title: 'Search tools (Ctrl K)', 'aria-label': 'Search tools', onclick: openPalette }, U.icon('search', 18)),
-    Theme.button(),
-    R.arrBtn = h('button.iconbtn.arrbtn', { type: 'button', title: 'Arrange — drag hexagons to rearrange', 'aria-label': 'Arrange', 'aria-pressed': 'false', onclick: function () { setArrange(!S.arrange); } }, U.icon('move', 18)),
-    h('button.iconbtn.minbtn', { type: 'button', title: 'Minimize — back to Beeforce; everything stays as it is', 'aria-label': 'Minimize', onclick: minimize }, U.icon('minimize', 18)),
-    h('button.iconbtn', { type: 'button', title: 'Close APIary (you stay signed in; it reopens where you were)', 'aria-label': 'Close', onclick: hide }, U.icon('x', 18)));
+    R.backBtn, R.modPill, R.crumb, h('span.topgap'),
+    h('button.topsearch', { type: 'button', title: 'Search tools, areas and actions (Ctrl K)', 'aria-label': 'Search tools', 'aria-keyshortcuts': 'Control+K', onclick: openPalette }, U.icon('search', 16), h('span.tsl', 'Search tools, actions…'), h('kbd', 'Ctrl K')),
+    R.env, whoWrap,
+    appearanceButton(),
+    h('div.winctl', { role: 'group', 'aria-label': 'Window' },
+      h('button.iconbtn.minbtn', { type: 'button', title: 'Minimize — back to Beeforce; everything stays as it is', 'aria-label': 'Minimize', onclick: minimize }, U.icon('minimize', 18)),
+      h('button.iconbtn', { type: 'button', title: 'Close APIary (you stay signed in; it reopens where you were)', 'aria-label': 'Close', onclick: hide }, U.icon('x', 18))));
+  R.arrBtn = h('button.btn.sm.arrbtn', { type: 'button', title: 'Arrange — drag hexagons to rearrange', 'aria-label': 'Arrange', 'aria-pressed': 'false', onclick: function () { setArrange(!S.arrange); } }, U.icon('move', 16), h('span', 'Arrange'));
+  R.combar = h('div.combar', { role: 'toolbar', 'aria-label': 'Honeycomb' }, R.arrBtn, R.viewSw);
 
   R.homePane = h('div.sidepane');
   R.areaPane = h('div.sidepane.areapane.off');
   R.toolPane = h('div.sidepane.toolpane.off');
-  R.side = h('div.side', R.homePane, R.areaPane, R.toolPane);
+  R.peek = h('div.peek', { 'aria-live': 'polite' });   // area details while an area is hovered / focused (desk)
+  R.side = h('div.side', R.homePane, R.areaPane, R.toolPane, R.peek);
   R.stage = h('div.stage');
-  R.peek = h('div.peek');
   R.tip = h('div.tip');
   R.work = h('div.work');
   R.gallery = h('div.gallery');
@@ -542,15 +842,17 @@ function buildMain(fromLogin) {
   R.light = h('div.backlight');
   R.arrBar = h('div.arrbar');
   S.arrange = false;
-  R.body = h('div.body', defs, R.side, R.modHead, R.modFoot, R.light, R.slotLayer, R.stage, R.arrBar, R.gallery, R.peek, R.tip, R.work);
+  R.body = h('div.body', defs, R.side, R.modHead, R.modFoot, R.light, R.slotLayer, R.stage, R.combar, R.arrBar, R.gallery, R.tip, R.work);
   app.insertBefore(top, R.toasts);
   app.insertBefore(R.body, R.toasts);
+  R.lastL = null;
+  setVp();
 
   buildCells();
   wireLight();
   drawModulePill(); drawViewSwitch(); markAdmin();
-  drawHomePane();
   S.level = 'home'; S.area = null; S.tool = null;
+  drawHomePane();
 
   // first frame: everything gathered at the hub, then bloom out
   layout({ intro: true });
@@ -588,6 +890,13 @@ function mkCell(id, cls, content, onClick, label, size) {
   return c;
 }
 
+/* Areas that get a number key (1–8): the module's areas with tools, in honeycomb order; Settings is not numbered. */
+function numberedAreas() { return AREAS.filter(function (a) { return !a.system && a.tools.length; }).slice(0, 8); }
+function applyKeyPrefs() {
+  if (!ctx.appEl) return;
+  ctx.appEl.classList.toggle('nokeys', !U.areaKeys());
+  ctx.appEl.classList.toggle('keys', U.areaKeys() && U.areaKeyBadges());
+}
 function buildCells() {
   // module tiles (module page)
   if (!ctx.adminConsole) (ctx.MODULE_LIST || []).forEach(function (m) {
@@ -608,13 +917,16 @@ function buildCells() {
   hub.addEventListener('mouseenter', function () { if (S.level !== 'home' && S.level !== 'modules') showTip(hub, (mod ? mod.name + ' · ' : '') + 'Home'); });
   hub.addEventListener('mouseleave', hideTip);
 
+  var nums = numberedAreas();
   AREAS.forEach(function (a) {
-    var c = mkCell('a:' + a.id, 'area', [U.icon(a.icon, 26), h('div.nm', a.name), h('div.ct', a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools')),
+    var n = nums.indexOf(a) + 1;
+    var c = mkCell('a:' + a.id, 'area', [n ? h('span.akey', { 'aria-hidden': 'true' }, h('kbd', String(n))) : null, U.icon(a.icon, 26), h('div.nm', a.name), h('div.ct', a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools')),
       h('div.pips', a.tools.map(function () { return h('i'); }))], function () {
       if (S.level === 'area' && S.area === a.id) return;
       if (S.level === 'tool' && S.area === a.id) return go('area', a.id);
       go('area', a.id);
     }, a.name);
+    if (n) c.setAttribute('aria-keyshortcuts', String(n));
     c.addEventListener('mouseenter', function () { if (S.level === 'home') showPeek(a, c); else if (c.classList.contains('mini')) showTip(c, a.name); });
     c.addEventListener('mouseleave', function () { hidePeek(); hideTip(); });
     c.addEventListener('focus', function () { if (S.level === 'home') showPeek(a, c); });
@@ -680,7 +992,7 @@ function modulesLayout() {
 function levelLayout(opts) {
   opts = opts || {};
   var W = R.body.clientWidth, H = R.body.clientHeight;
-  var cx = SIDE + (W - SIDE) / 2, cy = H / 2;
+  var SW = sideW(), cx = SW + (W - SW) / 2, cy = H / 2;
   var L = {};
   var hubAt;
 
@@ -695,7 +1007,7 @@ function levelLayout(opts) {
     // scale so every used place (or, while arranging, every possible place) fits
     var pts = S.arrange ? SLOTS : AREAS.map(function (a) { return sl[a.id]; }).concat([[1, 0], [0, 1], [-1, 1], [-1, 0], [1, -1], [0, -1]]);
     var mx = 0, mr = 0; pts.forEach(function (p) { mx = Math.max(mx, Math.abs(p[0] + p[1] / 2)); mr = Math.max(mr, Math.abs(p[1])); });
-    var k = Math.min(1, (W - SIDE - 60) / (368 * mx + 238), (H - 40) / (319 * mr + 251));
+    var k = Math.min(1, (W - SW - 60) / (368 * mx + 238), (H - 40) / (319 * mr + 251));
     var w = 168 * k, gap = 16 * k;
     hubAt = { x: cx, y: cy };
     L.hub = place('hub', cx, cy, w);
@@ -717,7 +1029,7 @@ function levelLayout(opts) {
   // mini-map (area level) or trail (tool level) for the hub + areas
   var area = areaById(S.area);
   if (S.level === 'area') {
-    var k2 = Math.min(1, (W - SIDE - 60) / 600, (H - 40) / 560);
+    var k2 = Math.min(1, (W - SW - 60) / 600, (H - 40) / 560);
     var unit = 174 * k2, gap2 = 15 * k2;
     L['a:' + area.id] = place('a:' + area.id, cx, cy, 190 * k2);
     L['a:' + area.id].sel = 1;
@@ -738,13 +1050,18 @@ function levelLayout(opts) {
       gi++;
     }
     for (; gi < 6; gi++) { L['g:' + gi] = place('g:' + gi, cx, cy, 40, 0); L['g:' + gi].gone = 1; }
-    // mini-map at top of the side panel
-    var mcx = SIDE / 2, mcy = 150, mw = 46, mg = 5;
-    L.hub = place('hub', mcx, mcy, mw); L.hub.mini = 1;
+    // desk: mini-map of hub + areas at the top of the side pane · tab: only the hub, at the top of the rail · narrow: none
+    var mcx = SW / 2, mcy = 150, mw = 46, mg = 5;
+    if (R.vp === 'desk') { L.hub = place('hub', mcx, mcy, mw); L.hub.mini = 1; }
+    else if (R.vp === 'tab') { mcy = 44; mw = 40; L.hub = place('hub', mcx, mcy, mw); L.hub.mini = 1; }
+    else { L.hub = place('hub', cx, cy, 40, 0); L.hub.gone = 1; }
     var msl = areaSlots();
     AREAS.forEach(function (a, i) {
-      var p = axial(msl[a.id][0], msl[a.id][1], mw, mg, mcx, mcy);
-      if (a.id !== area.id) { L['a:' + a.id] = place('a:' + a.id, p.x, p.y, mw); L['a:' + a.id].mini = 1; L['a:' + a.id].d = i * 20; }
+      var p = R.vp === 'desk' ? axial(msl[a.id][0], msl[a.id][1], mw, mg, mcx, mcy) : { x: L.hub.x, y: L.hub.y };
+      if (a.id !== area.id) {
+        if (R.vp === 'desk') { L['a:' + a.id] = place('a:' + a.id, p.x, p.y, mw); L['a:' + a.id].mini = 1; L['a:' + a.id].d = i * 20; }
+        else { L['a:' + a.id] = place('a:' + a.id, p.x, p.y, 20, 0); L['a:' + a.id].gone = 1; }
+      }
       else hubAt = p;
       a.tools.forEach(function (t) {
         if (a.id === area.id) return;
@@ -755,14 +1072,14 @@ function levelLayout(opts) {
     return L;
   }
 
-  // tool level: trail
-  var tx = 70, ty = 72, step = 106, tw = 64;
-  L.hub = place('hub', tx, ty, tw); L.hub.mini = 1;
+  // tool level: trail (desk: side pane with labels · tab: rail, names as tooltips · narrow: hidden, Back button instead)
+  var tg = trailGeom(), tx = tg.tx, ty = tg.ty, step = tg.step, tw = tg.tw, vis = R.vp === 'narrow' ? 0 : 1;
+  L.hub = place('hub', tx, ty, tw, vis); L.hub.mini = 1; if (!vis) L.hub.gone = 1;
   // A one-tool system area (Settings) has no step of its own: Home → tool.
   var skip = skipArea(area);
   if (skip) { L['a:' + area.id] = place('a:' + area.id, tx, ty, 20, 0); L['a:' + area.id].gone = 1; }
-  else { L['a:' + area.id] = place('a:' + area.id, tx, ty + step, tw); L['a:' + area.id].mini = 1; L['a:' + area.id].sel = 1; L['a:' + area.id].d = 40; }
-  L['t:' + S.tool] = place('t:' + S.tool, tx, ty + step * (skip ? 1 : 2), tw); L['t:' + S.tool].mini = 1; L['t:' + S.tool].cur = 1; L['t:' + S.tool].d = 80;
+  else { L['a:' + area.id] = place('a:' + area.id, tx, ty + step, tw, vis); L['a:' + area.id].mini = 1; L['a:' + area.id].sel = 1; L['a:' + area.id].d = 40; if (!vis) L['a:' + area.id].gone = 1; }
+  L['t:' + S.tool] = place('t:' + S.tool, tx, ty + step * (skip ? 1 : 2), tw, vis); L['t:' + S.tool].mini = 1; L['t:' + S.tool].cur = 1; L['t:' + S.tool].d = 80; if (!vis) L['t:' + S.tool].gone = 1;
   AREAS.forEach(function (a) {
     if (a.id !== area.id) { L['a:' + a.id] = place('a:' + a.id, tx, ty + step, 20, 0); L['a:' + a.id].gone = 1; }
     a.tools.forEach(function (t) {
@@ -774,19 +1091,33 @@ function levelLayout(opts) {
   return L;
 }
 
+function cellTf(c, p, k) { return 'translate(' + Math.round(p.x - c._bw / 2) + 'px,' + Math.round(p.y - c._bh / 2) + 'px) scale(' + (p.w / c._bw * (k || 1)).toFixed(4) + ')'; }
+/* Cancel this cell's scripted (calm / off) animations; CSS transitions (full) are left alone. */
+function stopAnims(c) {
+  if (!c || !c.getAnimations) return;
+  c.getAnimations().forEach(function (a) {
+    if ((window.CSSTransition && a instanceof CSSTransition) || (window.CSSAnimation && a instanceof CSSAnimation)) return;
+    a.cancel();
+  });
+}
+var CALM = 'cubic-bezier(.22,1,.36,1)';
 function layout(opts) {
   opts = opts || {};
+  setVp();
   R.targets = null;
+  var prevL = R.lastL || {};
   var L = computeLayout(opts);
-  var rm = U.reducedMotion();
+  var mo = motion(), rm = mo !== 'full';
   var maxD = 0;
   R.lastL = L;
   Object.keys(cells).forEach(function (id) {
     var c = cells[id], p = L[id];
     if (!p) return;
+    stopAnims(c);
     maxD = Math.max(maxD, p.d || 0);
     c.style.transitionDelay = rm || opts.instant ? '0ms' : (p.d || 0) + 'ms';
-    c.style.transform = 'translate(' + Math.round(p.x - c._bw / 2) + 'px,' + Math.round(p.y - c._bh / 2) + 'px) scale(' + (p.w / c._bw).toFixed(4) + ')';
+    var tf = cellTf(c, p);
+    c.style.transform = tf;
     c.style.opacity = String(p.o);
     c.classList.toggle('gone', !!p.gone || p.o === 0);
     c.classList.toggle('mini', !!p.mini);
@@ -795,11 +1126,21 @@ function layout(opts) {
     c.classList.toggle('back', !!p.back);
     c.tabIndex = p.gone || p.o === 0 || (id.indexOf('g:') === 0 && !p.back) ? -1 : 0;
     c.setAttribute('aria-hidden', p.gone || p.o === 0 ? 'true' : 'false');
+    // full: the CSS transition on .cell does the move. calm / off: scripted from the previous place.
+    var q = prevL[id];
+    if (opts.instant || mo === 'full' || !q || !c.animate) return;
+    var was = q.o > 0, is = p.o > 0;
+    if (mo === 'calm') {
+      if (was && is) { if (q.x !== p.x || q.y !== p.y || q.w !== p.w) c.animate([{ transform: cellTf(c, q) }, { transform: tf }], { duration: 380, easing: CALM, delay: Math.min((p.d || 0) * 0.3, 60), fill: 'backwards' }); }
+      else if (is) c.animate([{ transform: cellTf(c, p, 0.94), opacity: 0 }, { transform: tf, opacity: p.o }], { duration: 280, easing: CALM, delay: 60 + Math.round(Math.min(p.d || 0, 600) * 0.4), fill: 'backwards' });
+      else if (was) c.animate([{ transform: cellTf(c, q), opacity: q.o }, { transform: cellTf(c, q, 0.96), opacity: 0 }], { duration: 160, easing: 'cubic-bezier(.4,0,1,1)' });
+    } else if (is && !was) c.animate([{ opacity: 0 }, { opacity: p.o }], { duration: 120, easing: 'linear' });
   });
   markMovable();
   drawSlotMarks();
   if (opts.instant) void R.stage.offsetWidth; // commit, so the next layout animates from here
   else if (!rm) { flow(maxD + 950); R.settleAt = Date.now() + maxD + 650; }
+  else R.settleAt = Date.now() + (mo === 'calm' ? 420 : 0);
 }
 
 /* ---------------- arrange (drag and drop) ----------------
@@ -815,6 +1156,7 @@ function setArrange(on, quiet) {
   R.stage.classList.toggle('arranging', S.arrange);
   lightShow();
   if (R.arrBtn) R.arrBtn.setAttribute('aria-pressed', S.arrange ? 'true' : 'false');
+  if (R.railArr) R.railArr.setAttribute('aria-pressed', S.arrange ? 'true' : 'false');
   layout();
   drawArrangeBar();
   if (!quiet && S.arrange && !U.store.get('arrangeTipSeen', false)) { U.store.set('arrangeTipSeen', true); UI.toast('Drag a hexagon to a new place. Changes save in this browser as you go.'); }
@@ -873,6 +1215,7 @@ function dragMove(e) {
   var c = drag.c;
   if (!drag.moved) { drag.moved = true; c.classList.add('dragging'); hidePeek(); }
   var x = drag.px + dx, y = drag.py + dy;
+  drag.cx = x; drag.cy = y;
   c.style.transitionDelay = '0ms';
   c.style.transform = 'translate(' + Math.round(x - c._bw / 2) + 'px,' + Math.round(y - c._bh / 2) + 'px) scale(' + (drag.s * 1.08).toFixed(4) + ')';
   var best = null, bd = Infinity;
@@ -892,6 +1235,8 @@ function dragEnd() {
   Object.keys(cells).forEach(function (k) { cells[k].classList.remove('swapme'); });
   if (!d.moved) return;
   R.justDragged = true; setTimeout(function () { R.justDragged = false; }, 0);
+  // the dropped cell settles from where it was let go (calm / off animate from the last layout)
+  if (R.lastL && R.lastL[d.id] && d.cx != null) R.lastL[d.id] = place(d.id, d.cx, d.cy, R.lastL[d.id].w * 1.08, 1);
   if (d.target) dropOn(d.id, d.target);
   layout();
 }
@@ -960,7 +1305,7 @@ function downloadTeamLayout() {
 var LB = { cell: null, x: null, y: null, timer: null };
 function lightFor(c) {
   if (!R.light || !c || S.arrange || c.classList.contains('gone') || c.classList.contains('mini') || (c.classList.contains('ghost') && !c.classList.contains('back'))) return;
-  if (S.level === 'tool' || ctx.appEl.classList.contains('min')) return;
+  if (S.level === 'tool' || ctx.appEl.classList.contains('min') || motion() === 'off') return;
   clearTimeout(LB.timer);
   var r = c.getBoundingClientRect(), b = R.body.getBoundingClientRect();
   var x = r.left - b.left + r.width / 2, y = r.top - b.top + r.height / 2, k = (r.width * 2.7 / 520).toFixed(3);
@@ -982,8 +1327,8 @@ function wireLight() {}
 /* ---------------- liquid motion + hover tilt ---------------- */
 var Goo = { v: 0, t: 0, run: false, timer: null };
 function flow(ms) {
-  if (!R.blur || U.reducedMotion()) return;
-  Goo.t = 11; clearTimeout(Goo.timer);
+  if (!R.blur || motion() !== 'full') return;
+  Goo.t = 7; clearTimeout(Goo.timer);   // v3.7: softer merge (was 11)
   Goo.timer = setTimeout(function () { Goo.t = 0; }, ms);
   if (!Goo.run) { Goo.run = true; requestAnimationFrame(gooTick); }
 }
@@ -997,11 +1342,11 @@ function gooTick() {
   requestAnimationFrame(gooTick);
 }
 function tilt(c, e) {
-  if (S.arrange || c.classList.contains('gone') || c.classList.contains('mini') || (c.classList.contains('ghost') && !c.classList.contains('back')) || U.reducedMotion()) return;
+  if (S.arrange || c.classList.contains('gone') || c.classList.contains('mini') || (c.classList.contains('ghost') && !c.classList.contains('back')) || motion() !== 'full') return;
   var r = c.getBoundingClientRect();
   var fx = (e.clientX - r.left) / r.width - 0.5, fy = (e.clientY - r.top) / r.height - 0.5;
-  c.style.setProperty('--ry', (fx * 14).toFixed(1) + 'deg');
-  c.style.setProperty('--rx', (-fy * 14).toFixed(1) + 'deg');
+  c.style.setProperty('--ry', (fx * 10).toFixed(1) + 'deg');   // ±5° (was ±7°)
+  c.style.setProperty('--rx', (-fy * 10).toFixed(1) + 'deg');
 }
 function untilt(c) { c.style.removeProperty('--rx'); c.style.removeProperty('--ry'); }
 
@@ -1019,10 +1364,10 @@ function go(level, areaId, toolId) {
   var focusArea = null;
   if (level === 'area' && S.view !== 'honeycomb') { focusArea = areaId; level = 'home'; areaId = null; }
   // tools bloom from the centre of their area when entering an area from home
-  if (level === 'area' && (prev === 'home' || S.area !== areaId)) {
+  if (level === 'area' && (prev === 'home' || S.area !== areaId) && motion() === 'full') {
     var a = areaById(areaId);
     var W = R.body.clientWidth, H = R.body.clientHeight;
-    var cx = SIDE + (W - SIDE) / 2, cy = H / 2;
+    var cx = sideW() + (W - sideW()) / 2, cy = H / 2;
     a.tools.forEach(function (t) {
       var c = cells['t:' + t];
       c.style.transitionDelay = '0ms';
@@ -1040,14 +1385,16 @@ function go(level, areaId, toolId) {
   R.modFoot.classList.toggle('off', !onMods);
   R.side.classList.toggle('off', onMods);
   R.modPill.style.visibility = onMods ? 'hidden' : '';
-  R.viewSw.style.visibility = onMods ? 'hidden' : '';
+  R.viewSw.style.display = onMods || ctx.adminConsole ? 'none' : '';
+  R.combar.hidden = level === 'tool' || !!ctx.adminConsole;
+  R.stage.setAttribute('data-level', level);
   layout();
   drawArrangeBar();
   lightShow();
   // keyboard focus must not stay on a cell that just went away (e.g. the module tile you clicked)
   var fe = ctx.root.activeElement;
   if (fe && fe.classList && fe.classList.contains('cell') && fe.classList.contains('gone')) fe.blur();
-  drawCrumb();
+  drawCrumb(); drawBack();
   R.homePane.classList.toggle('off', level !== 'home');
   R.areaPane.classList.toggle('off', level !== 'area');
   R.toolPane.classList.toggle('off', level !== 'tool');
@@ -1098,20 +1445,27 @@ function rebuildCells() {
   cells = {};
   buildCells();
 }
-function closeMenus() { if (R.menu) { R.menu.remove(); R.menu = null; } }
+function closeMenus() { UI.closeMenu(); }
 
 /* User menu: admin unlock (inside a Beeforce session) and sign out. */
+function canArrange() { return !ctx.adminConsole && S.level !== 'tool' && S.level !== 'login'; }
 function userMenu(anchor) {
-  if (R.menu) return closeMenus();
-  var items = [];
+  var items = [{ header: ctx.adminConsole ? 'Admin console' : Api.state.user + ' · ' + (Api.envLabel() || '') }];
+  items.push({ icon: 'sliders', label: 'Appearance', sub: 'Theme, motion, area numbers', onClick: openAppearance });
+  if (canArrange()) items.push({ icon: 'move', label: S.arrange ? 'Finish arranging' : 'Arrange', sub: 'Drag hexagons to new places', onClick: function () { setArrange(!S.arrange); } });
+  else if (!ctx.adminConsole) items.push({ icon: 'move', label: 'Arrange', sub: 'Drag hexagons to new places', disabled: 'Not inside a tool' });
+  if (!ctx.adminConsole) items.push({ node: h('div.menuviews', { role: 'group', 'aria-label': 'View' }, VIEWS.map(function (v) {
+    return h('button', { type: 'button', role: 'menuitemradio', tabindex: '-1', title: v[2] + ' view', 'aria-label': v[2] + ' view', 'aria-pressed': S.view === v[0] ? 'true' : 'false', 'aria-checked': S.view === v[0] ? 'true' : 'false', onclick: function () { closeMenus(); setView(v[0]); } }, U.icon(v[1], 17));
+  })) });
+  items.push({ icon: 'keyboard', label: 'Keyboard shortcuts', right: '?', onClick: shortcuts });
   if (!ctx.adminConsole && ctx.AdminLogin.configured()) {
     items.push(ctx.adminUnlocked
-      ? h('button', { type: 'button', onclick: function () { closeMenus(); lockAdmin(); } }, U.icon('key', 18), h('div', h('b', 'Lock admin tools'), h('span', 'Hide Settings and Developer panels')))
-      : h('button', { type: 'button', onclick: function () { closeMenus(); unlockAdmin(); } }, U.icon('unlock', 18), h('div', h('b', 'Unlock admin tools'), h('span', 'Settings and Developer panels for this session'))));
+      ? { icon: 'key', label: 'Lock admin tools', sub: 'Hide Settings and Developer panels', onClick: lockAdmin }
+      : { icon: 'unlock', label: 'Unlock admin tools', sub: 'Settings and Developer panels for this session', onClick: unlockAdmin });
   }
-  items.push(h('button', { type: 'button', onclick: function () { closeMenus(); signOutAsk(); } }, U.icon('out', 18), h('div', h('b', 'Sign out'), h('span', ctx.adminConsole ? 'Leave the admin console' : 'Signed in as ' + Api.state.user))));
-  R.menu = h('div.menu.right', { role: 'menu' }, items);
-  anchor.appendChild(R.menu);
+  items.push('hr');
+  items.push({ icon: 'out', label: 'Sign out', sub: ctx.adminConsole ? 'Leave the admin console' : 'Signed in as ' + Api.state.user, onClick: signOutAsk });
+  UI.menu(anchor, items, { right: true, label: 'Account' });
 }
 function unlockAdmin() {
   return UI.dialog(function (box, close) {
@@ -1157,22 +1511,22 @@ function drawModulePill() {
   var many = mods.length > 1;
   var btn = h('button.modpill', { type: 'button', title: many ? 'Switch module' : m.name, 'aria-haspopup': many ? 'menu' : null },
     U.icon(m.icon, 16), h('span', m.name), many ? U.icon('chev', 14) : null);
-  if (many) btn.addEventListener('click', function (e) {
-    e.stopPropagation();
-    if (R.menu) return closeMenus();
-    R.menu = h('div.menu', { role: 'menu' }, mods.map(function (x) {
-      return h('button' + (x.id === S.module ? '.on' : ''), { type: 'button', role: 'menuitem', onclick: function () { closeMenus(); switchModule(x.id); } },
-        U.icon(x.icon, 18), h('div', h('b', x.name), x.desc ? h('span', x.desc) : null));
-    }));
-    R.modPill.appendChild(R.menu);
-  });
+  if (many) {
+    btn.setAttribute('aria-expanded', 'false');
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      UI.menu(btn, [{ header: 'Modules' }].concat(mods.map(function (x) {
+        return { icon: x.icon, label: x.name, sub: x.desc, on: x.id === S.module, right: x.id === S.module ? 'current' : null, onClick: function () { switchModule(x.id); } };
+      })), { label: 'Switch module' });
+    });
+  }
   U.swap(R.modPill, btn);
 }
 
 /* ---------------- views: honeycomb / gallery / cards / list (remembered per browser) ---------------- */
 function drawViewSwitch() {
   if (!R.viewSw) return;
-  R.viewSw.style.display = ctx.adminConsole ? 'none' : '';
+  R.viewSw.style.display = ctx.adminConsole || S.level === 'modules' ? 'none' : '';
   U.swap(R.viewSw, VIEWS.map(function (v) {
     return h('button', { type: 'button', title: v[2] + ' view', 'aria-label': v[2] + ' view', 'aria-pressed': S.view === v[0] ? 'true' : 'false', onclick: function () { setView(v[0]); } }, U.icon(v[1], 17));
   }));
@@ -1224,6 +1578,19 @@ function drawGallery(focusArea) {
   }
 }
 
+/* The top-bar Back button does what Esc does (tool → area → home → modules); hidden where there is nowhere to go. */
+function backLabel() {
+  if (S.level === 'tool') { var a = areaById(S.area); return 'Back to ' + (a ? a.name : 'the area'); }
+  if (S.level === 'area') return 'Back to all areas';
+  if (S.level === 'home' && !ctx.adminConsole && (ctx.MODULE_LIST || []).length) return 'Back to modules';
+  return null;
+}
+function drawBack() {
+  if (!R.backBtn) return;
+  var t = backLabel();
+  R.backBtn.hidden = !t;
+  if (t) { R.backBtn.title = t + ' (Esc)'; R.backBtn.setAttribute('aria-label', t); }
+}
 function back() {
   if (S.level === 'tool') go('area', S.area);
   else if (S.level === 'area') go('home');
@@ -1242,14 +1609,20 @@ function drawCrumb() {
 function recentList() { return U.store.get('recent', []).filter(function (t) { return TOOLS[t] && areaOf(t) && (!TOOLS[t].hidden || ctx.Layout.isAdmin()); }); }
 function pushRecent(t) { var r = recentList().filter(function (x) { return x !== t; }); r.unshift(t); U.store.set('recent', r.slice(0, 5)); }
 
+function railBtn(ic, label, fn) { return h('button', { type: 'button', title: label, 'aria-label': label, onclick: fn }, U.icon(ic, 18)); }
 function drawHomePane() {
   var rec = recentList();
   var runs = U.store.get('runs', []).slice(0, 4);
+  // tab: the side pane is a 72px rail with the same jobs as its buttons
+  R.railArr = canArrange() ? railBtn('move', 'Arrange — drag hexagons to rearrange', function () { setArrange(!S.arrange); }) : null;
+  if (R.railArr) R.railArr.setAttribute('aria-pressed', S.arrange ? 'true' : 'false');
   U.swap(R.homePane,
+    h('div.rail', railBtn('search', 'Find a tool (Ctrl K)', openPalette), railBtn('clock', 'Recent tools', openPalette), R.railArr),
+    h('div.full',
     h('h1', (moduleById(S.module) || {}).name || 'Configuration'),
     h('p', 'Pick ' + (S.view === 'honeycomb' ? 'an area, then a tool' : 'a tool') + '. Every change is shown for review before it is written to ' + (Api.envLabel() || 'Beeforce') + '.'),
     h('button.searchbtn', { type: 'button', onclick: openPalette }, U.icon('search', 18), 'Find a tool', h('kbd', 'Ctrl K')),
-    S.view === 'honeycomb' ? h('div', { style: { marginTop: '10px' } }, keyHint()) : null,
+    S.view === 'honeycomb' ? h('div', { style: { marginTop: '10px' } }, keyHint(true)) : null,
     ctx.Secrets.auditState() === 'configured' ? null : h('div', { style: { marginTop: '12px' } }, auditBadge(),
       h('div.small.dim', { style: { marginTop: '4px' } }, ctx.Secrets.auditState() === 'not-configured' ? 'Audit events will not be sent from this browser.' : ctx.Secrets.auditState() === 'failed' ? 'The last webhook test failed. Audit may not be delivered.' : 'Webhook saved, delivery not confirmed.')),
     rec.length ? h('div.label', 'Recent') : null,
@@ -1257,13 +1630,13 @@ function drawHomePane() {
     runs.length ? h('div.label', 'Last runs') : null,
     runs.length ? h('div.runs', runs.map(function (r) {
       return h('div', h('span', r.module), h('span', h('span.okc', r.ok + ' ok'), r.failed ? h('span.badc', ' · ' + r.failed + ' failed') : null, h('span.dim', ' · ' + ago(r.at))));
-    })) : null);
+    })) : null));
 }
 function ago(t) { var m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'now' : m < 60 ? m + 'm ago' : m < 1440 ? Math.round(m / 60) + 'h ago' : Math.round(m / 1440) + 'd ago'; }
 
 function drawAreaPane() {
   var a = areaById(S.area);
-  U.swap(R.areaPane,
+  U.swap(R.areaPane, h('div.full',
     h('h2', a.name),
     h('p', a.desc),
     a.tools.map(function (t) {
@@ -1273,31 +1646,34 @@ function drawAreaPane() {
       return b;
     }),
     h('div.spacer'),
-    h('button.linkbtn', { type: 'button', onclick: function () { go('home'); } }, '← All areas'));
+    h('button.linkbtn', { type: 'button', onclick: function () { go('home'); } }, '← All areas')));
 }
 
 function skipArea(a) { return !!(a && a.system && a.tools.length === 1); }
 function drawToolPane() {
   var a = areaById(S.area);
-  var tx = 70, ty = 72, step = 106;
+  var tg = trailGeom(), tx = tg.tx, ty = tg.ty, step = tg.step, half = tg.tw * 1.1547 / 2, mo = motion();
   var steps = skipArea(a) ? [['Home', 'home'], [TOOLS[S.tool].name, 'tool']] : [['Home', 'home'], [a.name, 'area'], [TOOLS[S.tool].name, 'tool']];
   var labels = steps.map(function (l, i) {
-    var el = h('div.tl' + (i === steps.length - 1 ? '.cur' : ''), l[0]);
-    el.style.left = (tx + 46) + 'px'; el.style.top = (ty + step * i) + 'px';
-    el.style.transition = 'opacity .3s var(--ease) ' + (120 + i * 60) + 'ms, transform .4s var(--ease) ' + (120 + i * 60) + 'ms';
-    el.style.opacity = '0'; el.style.transform = 'translate(-8px,-50%)';
-    requestAnimationFrame(function () { requestAnimationFrame(function () { el.style.opacity = '1'; el.style.transform = 'translate(0,-50%)'; }); });
+    var el = h('div.tl' + (i === steps.length - 1 ? '.cur' : ''), { title: l[0] }, l[0]);
+    el.style.left = (tx + tg.tw / 2 + 14) + 'px'; el.style.top = (ty + step * i) + 'px';
+    if (mo !== 'off') {
+      var dl = mo === 'full' ? 120 + i * 60 : 60 + i * 30;
+      el.style.transition = mo === 'full' ? 'opacity .3s var(--ease) ' + dl + 'ms, transform .4s var(--ease) ' + dl + 'ms' : 'opacity .2s var(--ease) ' + dl + 'ms';
+      el.style.opacity = '0'; el.style.transform = mo === 'full' ? 'translate(-8px,-50%)' : 'translate(0,-50%)';
+      requestAnimationFrame(function () { requestAnimationFrame(function () { el.style.opacity = '1'; el.style.transform = 'translate(0,-50%)'; }); });
+    }
     return el;
   });
-  var lines = steps.slice(1).map(function (x, i) { var ln = h('div.ln'); ln.style.top = (ty + step * i + 37) + 'px'; ln.style.height = (step - 74) + 'px'; return ln; });
+  var lines = steps.slice(1).map(function (x, i) { var ln = h('div.ln'); ln.style.left = (tx - 1) + 'px'; ln.style.top = (ty + step * i + half + 4) + 'px'; ln.style.height = Math.max(0, step - 2 * half - 8) + 'px'; return ln; });
   var trail = h('div.trail', lines, labels);
   trail.style.position = 'absolute'; trail.style.left = '0'; trail.style.top = '0'; trail.style.width = '100%';
   var sibs = a.tools.filter(function (t) { return t !== S.tool; });
   U.swap(R.toolPane, trail,
-    h('div.sib',
+    h('div.sib.full',
       sibs.length ? h('div.label', 'More in ' + a.name) : null,
       sibs.map(function (t) { return h('button.rec', { type: 'button', onclick: function () { go('tool', a.id, t); } }, TOOLS[t].name); })));
-  R.toolPane.style.padding = '0 30px 24px 36px';
+  R.toolPane.style.padding = R.vp === 'tab' ? '' : '0 20px 20px 22px';
 }
 
 /* ---------------- tool workspace ---------------- */
@@ -1313,7 +1689,8 @@ function openTool(id) {
     el.hidden = false;
     R.work.scrollTop = el.__scroll || 0;
     void R.work.offsetWidth;
-    setTimeout(function () { if (S.tool === id) R.work.classList.add('on'); }, U.reducedMotion() ? 0 : 180);
+    var mo = motion();
+    setTimeout(function () { if (S.tool === id) R.work.classList.add('on'); }, mo === 'off' ? 0 : mo === 'calm' ? 60 : 180);
   };
   R.work.onscroll = function () { var v = views[S.tool]; if (v) v.__scroll = R.work.scrollTop; };
   if (views[id]) return show(views[id]);
@@ -1344,61 +1721,196 @@ function markAdmin() { if (ctx.appEl) ctx.appEl.classList.toggle('admin', ctx.La
 function showPeek(a, cell) {
   if (S.arrange) return;
   if (Date.now() < (R.settleAt || 0)) return; // cells are still flowing under the pointer
-  var r = cell.getBoundingClientRect(), b = R.body.getBoundingClientRect();
-  U.swap(R.peek, h('b', a.name), h('p', a.desc), h('ul', a.tools.map(function (t) { return h('li', TOOLS[t].name); })), h('em', 'Click to open →'));
-  var left = r.right - b.left + 14;
-  if (left + 280 > b.width) left = r.left - b.left - 284;
-  var top = Math.max(10, Math.min(r.top - b.top + r.height / 2 - 90, b.height - 260));
-  R.peek.style.left = left + 'px'; R.peek.style.top = top + 'px';
+  if (R.vp !== 'desk') return showTip(cell, a.name + ' · ' + a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools'));
+  U.swap(R.peek, h('b', a.name), h('p', a.desc), h('ul', a.tools.map(function (t) { return h('li', TOOLS[t].name); })), h('em', 'Click or press Enter to open'));
   R.peek.classList.add('on');
 }
-function hidePeek() { R.peek && R.peek.classList.remove('on'); }
+function hidePeek() { R.peek && R.peek.classList.remove('on'); hideTip(); }
 function showTip(cell, text) {
   var r = cell.getBoundingClientRect(), b = R.body.getBoundingClientRect();
   R.tip.textContent = text;
-  R.tip.style.left = (r.right - b.left + 8) + 'px';
+  var left = r.right - b.left + 8;
+  if (left + R.tip.offsetWidth > b.width - 8) left = Math.max(8, r.left - b.left - R.tip.offsetWidth - 8);   // keep it on screen
+  R.tip.style.left = left + 'px';
   R.tip.style.top = (r.top - b.top + r.height / 2 - 14) + 'px';
   R.tip.classList.add('on');
 }
 function hideTip() { R.tip && R.tip.classList.remove('on'); }
 
-/* ---------------- palette (Ctrl K) ---------------- */
+/* ---------------- palette (Ctrl K) ----------------
+ * One search for tools, areas, actions and (admins) API endpoints. Words match the start of words anywhere in the
+ * name, hint or area ("acc pol"); a short query also matches initials ("tu" → Timecard Update). Tab on an area searches
+ * inside it (Backspace on an empty field leaves); Ctrl Enter opens the actions of the selected row. Endpoints are read
+ * from the registry only — nothing is sent. The selection follows the pointer only when the pointer actually moves. */
+function palActions() {
+  var many = !ctx.adminConsole && (ctx.MODULE_LIST || []).length > 0, out = [];
+  var dark = Theme.resolved() === 'dark';
+  out.push({ name: 'Appearance', hint: 'Theme, motion, area number shortcuts', icon: 'sliders', run: openAppearance, kw: 'theme motion dark light keys' });
+  out.push({ name: 'Switch to ' + (dark ? 'light' : 'dark') + ' theme', hint: 'Saved in this browser', icon: dark ? 'sun' : 'moon', run: function () { Theme.set(dark ? 'light' : 'dark'); }, kw: 'theme' });
+  if (canArrange()) out.push({ name: S.arrange ? 'Finish arranging' : 'Arrange the honeycomb', hint: 'Drag hexagons to new places', icon: 'move', run: function () { setArrange(!S.arrange); }, kw: 'move drag layout' });
+  if (!ctx.adminConsole) VIEWS.forEach(function (v) { if (v[0] !== S.view) out.push({ name: v[2] + ' view', hint: 'How tools are shown on the home page', icon: v[1], run: function () { setView(v[0]); }, kw: 'view layout' }); });
+  if (many) out.push({ name: 'Switch module…', hint: 'Back to the module page', icon: 'hexgrid', run: function () { go('modules'); }, kw: 'module' });
+  out.push({ name: 'Keyboard shortcuts', hint: 'All keys at a glance', icon: 'keyboard', run: shortcuts, kw: 'keys help ?' });
+  out.push({ name: 'Minimize', hint: 'Back to Beeforce; everything stays as it is', icon: 'minimize', run: minimize, kw: 'hide dock' });
+  if (!ctx.adminConsole && ctx.AdminLogin.configured()) out.push(ctx.adminUnlocked ? { name: 'Lock admin tools', hint: 'Hide Settings and Developer panels', icon: 'key', run: lockAdmin, kw: 'admin' } : { name: 'Unlock admin tools', hint: 'Settings and Developer panels for this session', icon: 'unlock', run: unlockAdmin, kw: 'admin' });
+  out.push({ name: 'Sign out…', hint: ctx.adminConsole ? 'Leave the admin console' : 'Signed in as ' + Api.state.user, icon: 'out', run: signOutAsk, kw: 'logout' });
+  return out.map(function (x) { x.type = 'action'; return x; });
+}
+function initialsOf(s) { return String(s).split(/[^A-Za-z0-9]+/).filter(Boolean).map(function (w) { return w[0]; }).join('').toLowerCase(); }
+/* Score how well the query words match a row; null = no match. Lower is better. Returns { score, marks:[[start,end]] }. */
+function palMatch(x, words) {
+  if (!words.length) return { score: 5, marks: [] };
+  var name = x.name.toLowerCase(), hay = (x.name + ' ' + (x.hint || '') + ' ' + (x.where || '') + ' ' + (x.kw || '') + ' ' + (x.key || '')).toLowerCase();
+  var q = words.join(' ');
+  if (words.length === 1 && q.length >= 2 && initialsOf(x.name).indexOf(q) === 0) {
+    var ws = [], re = /[A-Za-z0-9]+/g, m;
+    while ((m = re.exec(x.name)) && ws.length < q.length) ws.push([m.index, m.index + 1]);
+    if (name.indexOf(q) !== 0) return { score: 1.5, marks: ws };
+  }
+  var marks = [], score = 0;
+  for (var i = 0; i < words.length; i++) {
+    var w = words[i];
+    var start = new RegExp('(^|[^a-z0-9])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    var mn = start.exec(name);
+    if (mn) { var at = mn.index + mn[1].length; marks.push([at, at + w.length]); continue; }
+    var sub = name.indexOf(w);
+    if (sub >= 0) { marks.push([sub, sub + w.length]); score += 1; continue; }
+    if (start.test(hay)) { score += 2; continue; }
+    if (hay.indexOf(w) >= 0) { score += 3; continue; }
+    return null;
+  }
+  if (name === q) score -= 3; else if (name.indexOf(q) === 0) score -= 2;
+  return { score: score, marks: marks };
+}
+function markText(text, marks) {
+  if (!marks || !marks.length) return text;
+  var out = [], pos = 0;
+  marks.slice().sort(function (a, b) { return a[0] - b[0]; }).forEach(function (m) {
+    if (m[0] < pos) return;
+    if (m[0] > pos) out.push(text.slice(pos, m[0]));
+    out.push(h('mark', text.slice(m[0], m[1]))); pos = m[1];
+  });
+  if (pos < text.length) out.push(text.slice(pos));
+  return out;
+}
 function openPalette() {
   if (S.level === 'login' || R.pal) return;
-  var all = [];
+  closeMenus();
   var admin = ctx.Layout.isAdmin();
   var manyMods = (ctx.MODULES || []).length > 1;
-  ctx.AREAS.forEach(function (a) { (a.allTools || a.tools).forEach(function (t) { if (TOOLS[t] && (!TOOLS[t].hidden || admin)) all.push({ t: t, a: a, name: TOOLS[t].name, hint: TOOLS[t].hint + (TOOLS[t].hidden ? ' · hidden' : ''), where: (manyMods && moduleById(a.module) ? moduleById(a.module).name + ' · ' : '') + a.name }); }); });
-  var q = UI.input({ placeholder: 'Search tools — e.g. "accrual set", "punch"' });
-  var ul = h('ul', { role: 'listbox' });
-  var cur = 0, shown = [];
+  var tools = [], areas = [], eps = [];
+  ctx.AREAS.forEach(function (a) {
+    var where = (manyMods && moduleById(a.module) ? moduleById(a.module).name + ' · ' : '') + a.name;
+    (a.allTools || a.tools).forEach(function (t) { if (TOOLS[t] && (!TOOLS[t].hidden || admin)) tools.push({ type: 'tool', t: t, a: a, name: TOOLS[t].name, hint: TOOLS[t].hint + (TOOLS[t].hidden ? ' · hidden' : ''), where: where, icon: TOOLS[t].icon || a.icon }); });
+    if (!a.system && a.tools.length && (!a.module || a.module === '*' || moduleById(a.module))) areas.push({ type: 'area', a: a, name: a.name, hint: a.desc || '', where: (manyMods && moduleById(a.module) ? moduleById(a.module).name + ' · ' : '') + a.tools.length + (a.tools.length === 1 ? ' tool' : ' tools'), icon: a.icon });
+  });
+  if (admin && ctx.EP) try { ctx.EP.all().forEach(function (e) { if (!TOOLS[e.tool] && e.tool !== 'admin-settings') return; eps.push({ type: 'ep', e: e, name: e.label, hint: e.path, where: (TOOLS[e.tool] || {}).name || e.tool, method: e.method, key: e.key, kw: e.method + ' endpoint api', icon: 'code' }); }); } catch (x) {}
+  var acts = palActions();
+  var q = UI.input({ placeholder: 'Search tools, areas and actions' });
+  q.setAttribute('role', 'combobox'); q.setAttribute('aria-expanded', 'true'); q.setAttribute('aria-autocomplete', 'list'); q.setAttribute('aria-label', 'Search tools, areas and actions');
+  var ul = h('ul', { role: 'listbox', id: 'bft-pal-list', 'aria-label': 'Results' });
+  q.setAttribute('aria-controls', 'bft-pal-list');
+  var scopeEl = h('span.scope', { hidden: true });
+  var cur = 0, shown = [], scope = null, mouse = null;
+  function rowsFor(words) {
+    function pick(list, n) {
+      var out = [];
+      list.forEach(function (x) { var m = palMatch(x, words); if (m) out.push({ x: x, m: m }); });
+      out.sort(function (p, r) { return p.m.score - r.m.score; });
+      return n ? out.slice(0, n) : out;
+    }
+    if (scope) return [['Tools in ' + scope.name, pick(tools.filter(function (x) { return x.a.id === scope.id; }))]];
+    if (!words.length) {
+      var rec = recentList();
+      var recent = rec.map(function (t) { return tools.filter(function (x) { return x.t === t; })[0]; }).filter(Boolean).slice(0, 5).map(function (x) { return { x: x, m: { score: 0, marks: [] } }; });
+      return [['Recent', recent], ['Areas', pick(areas)], ['Actions', pick(acts, 4)]];
+    }
+    return [['Tools', pick(tools, 8)], ['Areas', pick(areas, 4)], ['Actions', pick(acts, 5)], ['API endpoints', admin ? pick(eps, 6) : []]];
+  }
   function draw() {
     var words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
-    shown = all.filter(function (x) { var s = (x.name + ' ' + x.hint + ' ' + x.where + ' ' + x.t).toLowerCase(); return words.every(function (w) { return s.indexOf(w) >= 0; }); });
-    if (words.length) {
-      var score = function (x) { var n = x.name.toLowerCase(), qq = words.join(' '); return n === qq ? 0 : n.indexOf(qq) === 0 ? 1 : n.indexOf(qq) >= 0 ? 2 : words.every(function (w) { return n.indexOf(w) >= 0; }) ? 3 : 4; };
-      shown.sort(function (x, y) { return score(x) - score(y); });
-    }
-    if (!words.length) { var rec = recentList(); shown.sort(function (x, y) { var i = rec.indexOf(x.t), j = rec.indexOf(y.t); return (i < 0 ? 99 : i) - (j < 0 ? 99 : j); }); }
+    var groups = rowsFor(words);
+    shown = [];
+    var nodes = [];
+    groups.forEach(function (g) {
+      if (!g[1].length) return;
+      nodes.push(h('li.gh', { role: 'presentation' }, g[0]));
+      g[1].forEach(function (p) {
+        var x = p.x, i = shown.length; shown.push(x);
+        var right = x.type === 'ep' ? h('em', h('span.m.' + x.method, x.method), ' ', x.where) : x.type === 'area' ? h('em', x.where, ' · ', h('kbd', 'Tab'), ' search in') : h('em', x.where || '');
+        var b = h('button', { type: 'button', role: 'option', id: 'bft-pal-' + i, 'aria-selected': i === cur ? 'true' : 'false', onclick: function () { pick(x); } },
+          h('span.gl' + (x.type === 'area' ? '.hexg' : ''), U.icon(x.icon || 'list', 16)), h('b', markText(x.name, p.m.marks)), x.hint ? h('span', x.type === 'ep' ? h('code', x.hint) : x.hint) : null, right);
+        b.addEventListener('mousemove', function (e) { if (mouse && mouse[0] === e.clientX && mouse[1] === e.clientY) return; mouse = [e.clientX, e.clientY]; if (cur !== i) { cur = i; mark(false); } });
+        nodes.push(h('li', { role: 'presentation' }, b));
+      });
+    });
     cur = Math.min(cur, Math.max(0, shown.length - 1));
-    U.swap(ul, shown.length ? shown.map(function (x, i) {
-      return h('li', h('button', { type: 'button', role: 'option', 'aria-selected': i === cur ? 'true' : 'false', onclick: function () { pick(x); }, onmouseenter: function () { cur = i; mark(); } },
-        U.icon((TOOLS[x.t] || {}).icon || x.a.icon, 18), h('b', x.name), h('span', x.hint), h('em', x.where)));
-    }) : h('li', h('div.empty', 'No tool matches “' + q.value + '”')));
+    U.swap(ul, nodes.length ? nodes : h('li', h('div.empty', 'Nothing matches “' + q.value + '”', scope ? h('div', h('button.linkbtn', { type: 'button', onclick: function () { setScope(null); } }, 'Search everywhere')) : null)));
+    mark(true);
+    foot();
   }
-  function mark() { Array.prototype.forEach.call(ul.querySelectorAll('button'), function (b, i) { b.setAttribute('aria-selected', i === cur ? 'true' : 'false'); if (i === cur) b.scrollIntoView({ block: 'nearest' }); }); }
-  function pick(x) { close(); go('tool', x.a.id, x.t); }
+  function mark(scroll) {
+    Array.prototype.forEach.call(ul.querySelectorAll('button[role=option]'), function (b, i) { b.setAttribute('aria-selected', i === cur ? 'true' : 'false'); if (i === cur && scroll !== false) b.scrollIntoView({ block: 'nearest' }); });
+    if (shown[cur]) q.setAttribute('aria-activedescendant', 'bft-pal-' + cur); else q.removeAttribute('aria-activedescendant');
+    foot();
+  }
+  var footEl = h('div.pf');
+  function foot() {
+    var x = shown[cur];
+    U.swap(footEl, h('span', h('kbd', '↑'), h('kbd', '↓'), ' move'), h('span', h('kbd', 'Enter'), ' ' + (x ? (x.type === 'ep' ? 'Developer panel' : x.type === 'action' ? 'run' : 'open') : 'open')),
+      x && x.type === 'area' && !scope ? h('span', h('kbd', 'Tab'), ' search in area') : null,
+      x ? h('span', h('kbd', 'Ctrl'), h('kbd', 'Enter'), ' actions') : null, h('span.grow'), h('span', h('kbd', 'Esc'), ' close'));
+  }
+  function setScope(a) {
+    scope = a ? { id: a.id, name: a.name } : null;
+    scopeEl.hidden = !a;
+    if (a) U.swap(scopeEl, U.icon(a.icon, 14), h('span', a.name), h('button', { type: 'button', 'aria-label': 'Search everywhere', title: 'Search everywhere (Backspace)', onclick: function () { setScope(null); q.focus(); } }, U.icon('x', 12)));
+    q.placeholder = a ? 'Search tools in ' + a.name : 'Search tools, areas and actions';
+    q.value = ''; cur = 0; draw();
+  }
+  function actionsFor(x) {
+    var list = [];
+    if (x.type === 'tool') {
+      list.push({ icon: 'play', label: 'Open', right: 'Enter', onClick: function () { pick(x); } });
+      if (admin && x.t !== 'admin-settings' && x.t !== 'api-automation') list.push({ icon: 'code', label: 'Developer panel', sub: 'Endpoints this tool uses', onClick: function () { close(); go('tool', x.a.id, x.t); setTimeout(function () { openDev(x.t); }, 400); } });
+      list.push({ icon: 'search', label: 'Search in ' + x.a.name, onClick: function () { setScope(x.a); q.focus(); } });
+    } else if (x.type === 'area') {
+      list.push({ icon: 'play', label: 'Open area', right: 'Enter', onClick: function () { pick(x); } });
+      list.push({ icon: 'search', label: 'Search in ' + x.a.name, right: 'Tab', onClick: function () { setScope(x.a); q.focus(); } });
+    } else if (x.type === 'ep') {
+      list.push({ icon: 'copy', label: 'Copy path', sub: x.e.path, onClick: function () { UI.copy(x.e.path, 'Path'); } });
+      list.push({ icon: 'code', label: 'Show cURL', sub: 'The token stays a placeholder', onClick: function () { close(); UI.codeDialog(x.e.method + ' · ' + x.e.label, ctx.EP.curlRaw(x.e.method, ctx.EP.url(x.e.key)), { what: 'cURL', note: 'The Authorization header uses $BEEFORCE_TOKEN. Nothing is sent from here.' }); } });
+      list.push({ icon: 'code', label: 'Developer panel', sub: x.where, right: 'Enter', onClick: function () { pick(x); } });
+    } else list.push({ icon: x.icon, label: x.name, right: 'Enter', onClick: function () { pick(x); } });
+    return list;
+  }
+  function openActions() {
+    var x = shown[cur]; if (!x) return;
+    var b = ul.querySelector('#bft-pal-' + cur); if (!b) return;
+    UI.menu(b, actionsFor(x), { right: true, returnFocus: q, label: 'Actions for ' + x.name });
+  }
+  function pick(x) {
+    if (x.type === 'tool') { close(); go('tool', x.a.id, x.t); }
+    else if (x.type === 'area') { close(); go('area', x.a.id); }
+    else if (x.type === 'ep') { close(); if (TOOLS[x.e.tool] && areaOf(x.e.tool)) { go('tool', areaOf(x.e.tool).id, x.e.tool); setTimeout(function () { openDev(x.e.tool); }, 400); } else UI.copy(x.e.path, 'Path'); }
+    else { close(); setTimeout(x.run, 0); }
+  }
   q.addEventListener('input', function () { cur = 0; draw(); });
   q.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowDown') { e.preventDefault(); cur = Math.min(shown.length - 1, cur + 1); mark(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); cur = Math.max(0, cur - 1); mark(); }
+    else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); openActions(); }
     else if (e.key === 'Enter') { e.preventDefault(); if (shown[cur]) pick(shown[cur]); }
-    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    else if (e.key === 'Tab' && !e.shiftKey && shown[cur] && shown[cur].type === 'area' && !scope) { e.preventDefault(); setScope(shown[cur].a); }
+    else if (e.key === 'Tab') { e.preventDefault(); }
+    else if (e.key === 'Backspace' && scope && !q.value) { e.preventDefault(); setScope(null); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (scope) setScope(null); else close(); }
   });
-  var pal = h('div.pal', { role: 'dialog', 'aria-label': 'Find a tool' }, h('div.q', U.icon('search', 20), q, h('span.kbd', 'Esc')), ul);
+  var pal = h('div.pal', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Search tools, areas and actions' }, h('div.q', U.icon('search', 20), scopeEl, q, h('span.kbd', 'Esc')), ul, footEl);
   var scrim = h('div.scrim', { style: { background: 'var(--scrim)' } });
   scrim.addEventListener('mousedown', function (e) { if (e.target === scrim) close(); });
   scrim.appendChild(pal);
+  var opener = ctx.root.activeElement;
   ctx.appEl.appendChild(scrim);
   R.pal = scrim;
   draw();
@@ -1407,9 +1919,35 @@ function openPalette() {
   function close() {
     if (!R.pal) return;
     R.pal = null;
+    UI.closeMenu();
     scrim.classList.remove('on'); pal.classList.remove('on');
     setTimeout(function () { scrim.remove(); }, 200);
+    if (opener && opener.isConnected && S.level !== 'tool') try { opener.focus({ preventScroll: true }); } catch (x) {}
   }
+}
+
+/* Keyboard shortcuts (? or the user menu). */
+function shortcuts() {
+  closeMenus();
+  var on = U.areaKeys();
+  var rows = [
+    ['Search tools, areas, actions', ['Ctrl', 'K']],
+    ['Move between hexagons', ['←', '→', '↑', '↓']],
+    [on ? 'Open area 1–8 (home honeycomb)' : 'Open area 1–8 — off; turn on in Appearance', ['1', '…', '8']],
+    ['Open the focused hexagon or row', ['Enter']],
+    ['Back one level, close a dialog or menu', ['Esc']],
+    ['Search the table', ['/']],
+    ['Search inside an area (palette)', ['Tab']],
+    ['Actions for the selected result (palette)', ['Ctrl', 'Enter']],
+    ['This list', ['?']]
+  ];
+  return UI.dialog(function (box, close) {
+    box.classList.add('keysdlg');
+    U.append(box, [h('h2', 'Keyboard shortcuts'),
+      h('div.keylist', rows.map(function (r) { return h('div.krow' + (r[0].indexOf('— off') > 0 ? '.off' : ''), h('span', r[0]), h('span.kk', r[1].map(function (k) { return k === '…' ? h('span', '–') : h('kbd', k); }))); })),
+      h('p.small.dim', { style: { margin: '10px 0 0' } }, 'Keys don’t act while you type in a field. Mac: Cmd works for Ctrl.'),
+      h('div.acts', h('button.btn.quiet', { type: 'button', onclick: function () { close(); openAppearance(); } }, U.icon('sliders', 16), h('span', 'Appearance')), h('button.btn.primary', { type: 'button', onclick: function () { close(); } }, 'Done'))]);
+  });
 }
 
 /* ---------------- session ---------------- */
@@ -1522,22 +2060,40 @@ function hide() {
 }
 
 /* ---------------- keys + resize ---------------- */
-document.addEventListener('mousedown', function (e) {
-  if (R.menu && ctx.host && e.composedPath && e.composedPath().indexOf(R.menu.parentNode) < 0) closeMenus();
-}, true);
-function keyHint() { return h('div.keyhint', h('span', h('kbd', '←'), ' ', h('kbd', '→'), ' ', h('kbd', '↑'), ' ', h('kbd', '↓'), ' move'), h('span', h('kbd', 'Enter'), ' open'), h('span', h('kbd', 'Esc'), ' back')); }
+function keyHint(areas) {
+  return h('div.keyhint', h('span', h('kbd', '←'), ' ', h('kbd', '→'), ' ', h('kbd', '↑'), ' ', h('kbd', '↓'), ' move'),
+    areas ? h('span.kh', h('kbd', '1'), '–', h('kbd', '8'), ' open area') : null,
+    h('span', h('kbd', 'Enter'), ' open'), h('span', h('kbd', 'Esc'), ' back'), h('span', h('kbd', '?'), ' all keys'));
+}
 function onKey(e) {
   if (!ctx.host || !ctx.host.isConnected || R.minimized) return;
+  if (UI.menuOpen()) return;   // an open menu handles its own keys (core/ui.js)
   if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); e.stopPropagation(); openPalette(); return; }
   if (R.pal || S.level === 'login' || !ctx.appEl.isConnected || ctx.appEl.querySelector('.scrim')) return;
+  // Nothing below acts while the user types: fields, editable text, text boxes and IME composition.
   var path = e.composedPath ? e.composedPath() : [];
-  if (path.some(function (n) { return n && (/^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName) || n.isContentEditable); })) return;
+  if (e.isComposing || path.some(function (n) { return n && n.nodeType === 1 && (/^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName) || n.isContentEditable || /^(textbox|combobox|searchbox)$/.test(n.getAttribute && n.getAttribute('role') || '')); })) return;
   if (e.key === 'Escape' && S.arrange) { e.preventDefault(); e.stopPropagation(); setArrange(false); return; }
   if (e.key === 'Escape' && (S.level === 'tool' || S.level === 'area' || (S.level === 'home' && (ctx.MODULE_LIST || []).length))) {
     e.preventDefault(); e.stopPropagation(); back();
     return;
   }
-  if (/^Arrow/.test(e.key) && !e.altKey && !e.ctrlKey && !e.metaKey && (S.level === 'modules' || S.level === 'home' || S.level === 'area')) {
+  var plain = !e.altKey && !e.ctrlKey && !e.metaKey;
+  // 1–8 open areas on the home honeycomb (Appearance → Area number shortcuts)
+  if (plain && /^[1-8]$/.test(e.key) && S.level === 'home' && S.view === 'honeycomb' && !S.arrange && U.areaKeys()) {
+    var a = numberedAreas()[+e.key - 1];
+    if (a) { e.preventDefault(); e.stopPropagation(); go('area', a.id); }
+    return;
+  }
+  if (plain && e.key === '?' ) { e.preventDefault(); e.stopPropagation(); shortcuts(); return; }
+  // / focuses the search of the table on screen
+  if (plain && e.key === '/' && S.level === 'tool') {
+    var page = R.work.querySelector('.page:not([hidden])');
+    var box = page && Array.prototype.filter.call(page.querySelectorAll('input.tsearch'), function (i) { return i.offsetParent; })[0];
+    if (box) { e.preventDefault(); e.stopPropagation(); box.focus(); box.select(); }
+    return;
+  }
+  if (/^Arrow/.test(e.key) && plain && (S.level === 'modules' || S.level === 'home' || S.level === 'area')) {
     if (arrowNav(e.key)) { e.preventDefault(); e.stopPropagation(); }
   }
 }
@@ -1569,7 +2125,16 @@ function arrowNav(key) {
   return true;
 }
 var rt;
-function onResize() { clearTimeout(rt); rt = setTimeout(function () { if (R.placeDock) R.placeDock(); if (S.level !== 'login' && !R.minimized) layout({ instant: true }); }, 80); }
+function onResize() {
+  clearTimeout(rt);
+  rt = setTimeout(function () {
+    if (R.placeDock) R.placeDock();
+    var changed = setVp();
+    if (S.level === 'login' || !R.body) return;
+    if (changed) { hidePeek(); if (S.level === 'home') drawHomePane(); else if (S.level === 'tool') drawToolPane(); }
+    if (!R.minimized) layout({ instant: true });
+  }, 80);
+}
 
 /* ---------------- start ---------------- */
 function start() {
@@ -1603,7 +2168,7 @@ function relayout() {
 ctx.Shell = {
   minimize: minimize, restore: restore, isMinimized: isMinimized,
   relayout: relayout, switchModule: switchModule, setView: setView, chooseModule: chooseModule, adminToBeeforce: adminToBeeforce,
-  start: start, go: go, back: back, hide: hide, openPalette: openPalette, secretsPanel: secretsPanel, auditBadge: auditBadge, adminLoginPanel: adminLoginPanel,
+  start: start, go: go, back: back, hide: hide, openPalette: openPalette, openAppearance: openAppearance, secretsPanel: secretsPanel, auditBadge: auditBadge, adminLoginPanel: adminLoginPanel,
   state: S,
   noteRun: function (module, ok, failed) {
     var r = U.store.get('runs', []);

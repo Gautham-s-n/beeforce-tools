@@ -18,7 +18,8 @@ var KIND = {
   act: { chip: 'new', label: 'Action' },
   same: { chip: '', label: 'No change' },
   skip: { chip: '', label: 'Skipped' },
-  bad: { chip: 'bad', label: 'Error' }
+  bad: { chip: 'bad', label: 'Error' },
+  done: { chip: 'ok', label: 'Applied' }
 };
 function applicable(it) { return it.kind === 'new' || it.kind === 'upd' || it.kind === 'del' || it.kind === 'act'; }
 
@@ -91,38 +92,167 @@ function fmtv(v) { v = X.fmt(v); return v === '' || v == null ? '∅' : String(v
  *  cfg.reportCols    extra report columns [{label,get(it)}]
  *  cfg.blankNote     text (or fn → text) shown on review when updates exist, describing what blank cells do
  *  cfg.sheet         sheet name to read (optional)
+ *  cfg.errorRows     true when every item comes from its own row(s) of the read sheet (item.row = a row number or
+ *                    "2, 3"): error files then carry those rows with their upload columns, so they can be fixed and
+ *                    uploaded again (v3.9). Grouped tools leave it off and get the result list only.
+ *  cfg.csv           true when the template's first sheet is all the upload needs: "Download template" offers CSV.
+ *
+ * v3.9 step navigation: the stepper and Back buttons go to earlier steps; Alt ← / Alt → step back and forward.
+ * Going back after (or while pausing) a run re-reads Beeforce with cfg.parse (the same GET requests) and marks the
+ * rows that were already applied: they are locked and never sent again, whatever the review shows.
  * ========================================================= */
+var ERR_COLS = ['Error', 'Stage', 'Row in file'];
+/* CSV of an Excel download: run the tool's own Excel builder, take its first sheet (the one an upload reads) and save
+ * that as CSV instead. The same GET requests are made; nothing else changes. */
+async function captureCsv(excelFn, fallbackName) {
+  var orig = X.download, got = null;
+  X.download = function (name, sheets) { got = { name: name, sheets: sheets }; return Promise.resolve(); };
+  try { await excelFn(); } finally { X.download = orig; }
+  if (!got || !got.sheets || !got.sheets.length) throw new Error('Nothing to save.');
+  var sh = got.sheets[0];
+  X.downloadCsv(String(got.name || fallbackName + '.xlsx').replace(/\.xlsx$/i, '') + '.csv', sh);
+  UI.toast('Saved as CSV: the ' + (sh.name || 'upload') + ' sheet' + (got.sheets.length > 1 ? '. Reference sheets are only in the Excel file.' : '.'), 'ok');
+}
+/* "Export for editing": one click = Excel as before; the chevron offers CSV of the upload sheet. */
+function exportButton(excelFn, label) {
+  var main = UI.btn(label || 'Export for editing', { icon: 'download', sm: true, onClick: excelFn });
+  return UI.splitBtn(main, [{ header: 'Current data, in the upload format' },
+    { icon: 'download', label: 'Excel (.xlsx)', sub: 'Every sheet', right: 'default', onClick: function () { UI.busy(main, excelFn); } },
+    { icon: 'download', label: 'CSV (.csv)', sub: 'The upload sheet only', onClick: function () { captureCsv(excelFn, 'export').catch(function (e) { UI.toast(e.message, 'bad'); }); } }], label || 'Export for editing');
+}
+function rowNums(r) { return String(r == null ? '' : r).split(/\s*,\s*/).map(function (x) { return parseInt(x, 10); }).filter(function (n) { return n > 0; }); }
 function uploadFlow(cfg) {
-  var st = UI.steps(['Choose file', 'Review', 'Apply', 'Report']);
-  var body = h('div');
-  var el = h('div', st, body);
+  var NAMES = ['Choose file', 'Review', 'Apply', 'Report'];
+  var cur = 0;
   var items = [];
-  var fileName = '';
+  var fileName = '', file = null;
+  var done = {};         // identity → result, for every item applied in this flow (never sent again)
+  var run = null;        // { panel, todo, back } while applying
+  var last = null;       // { todo, res } of the last finished run
+  var st = UI.steps(NAMES, { canPick: canPick, onPick: goStep });
+  var body = h('div');
+  var el = h('div.flow', st, body);
+  var mod = (cfg.module || 'upload').replace(/\W+/g, '_');
 
+  /* An item's identity across re-reads of the same file: its row(s), or its label when it has no row. */
+  function identify(list) {
+    var seen = {};
+    list.forEach(function (it, i) {
+      var base = it.row != null && it.row !== '' ? 'r' + it.row : 'l' + (it.label || '');
+      seen[base] = (seen[base] || 0) + 1;
+      it.__id = base + '#' + seen[base];
+      it.__k = String(i);
+      if (done[it.__id]) { it.kind = 'done'; it.result = done[it.__id]; }
+      it.__lock = !applicable(it);
+    });
+    return list;
+  }
+  function setStep(i) { cur = i; st.set(i); }
+  function canPick(i) {
+    if (run) return i === 1 ? true : false;
+    if (i === 0) return true;
+    if (i === 1) return items.length > 0;
+    if (i === 3) return !!last;
+    return false;
+  }
+  function goStep(i) {
+    if (run) { if (i < 2) backFromRun(); return; }
+    if (i === 0) stepChoose();
+    else if (i === 1) last ? recheck() : stepReview();
+    else if (i === 3 && last) stepReport();
+  }
+  el.stepKey = function (dir) {
+    if (dir < 0) { if (run) return backFromRun(); if (cur === 3) return recheck(); if (cur === 1) return stepChoose(); }
+    else { if (run) return; if (cur === 0 && items.length) return last ? recheck() : stepReview(); if (cur === 1 && R.applyBtn && !R.applyBtn.disabled) return R.applyBtn.click(); }
+  };
+  var R = {};
+
+  /* ---------- downloads ---------- */
+  // The review works on the current items; the report on the items as they were when its run ended (last.items).
+  function src() { return cur === 3 && last ? last.items : items; }
+  function errorItems() {
+    return src().filter(function (it) { return it.kind === 'bad' || (it.result && !it.result.ok && it.kind !== 'done'); });
+  }
+  function stageOf(it) { return it.kind === 'bad' ? 'Review' : 'Apply'; }
+  function msgOf(it) { var r = it.result; return it.kind === 'bad' ? (it.error || '') : r ? ((r.status ? 'HTTP ' + r.status + ': ' : '') + (r.msg || '')) : ''; }
+  /* Re-uploadable errors: the uploaded rows (all their columns, in file order) + Error, Stage, Row in file. */
+  function errorSheet(errs) {
+    var hdr = (file && file.headers || []).filter(function (x) { return x && ERR_COLS.indexOf(x) < 0; });
+    var byRow = {}; (file && file.rows || []).forEach(function (r) { byRow[r.__row] = r; });
+    var rows = [];
+    errs.forEach(function (it) {
+      rowNums(it.row).forEach(function (n) {
+        var r = byRow[n]; if (!r) return;
+        rows.push({ n: n, v: hdr.map(function (k) { return r[k] == null ? '' : r[k]; }).concat([msgOf(it), stageOf(it), n]) });
+      });
+    });
+    rows.sort(function (a, b) { return a.n - b.n; });
+    return { name: 'Errors', tabColor: 'C62828', headers: hdr.concat(ERR_COLS), rows: rows.map(function (x) { return x.v; }), highlightCols: [hdr.length] };
+  }
+  function errorsExcel() {
+    var errs = errorItems();
+    var sheets = cfg.errorRows ? [errorSheet(errs), reportSheet(errs, cfg.reportCols)] : [reportSheet(errs, cfg.reportCols)];
+    return X.download(mod + '_errors_' + U.stamp() + '.xlsx', sheets);
+  }
+  function errorsCsv() {
+    var errs = errorItems();
+    X.downloadCsv(mod + '_errors_' + U.stamp() + '.csv', cfg.errorRows ? errorSheet(errs) : reportSheet(errs, cfg.reportCols));
+    UI.toast('Errors saved as CSV.', 'ok');
+  }
+  function copyErrors() {
+    var errs = errorItems(), sh = cfg.errorRows ? errorSheet(errs) : reportSheet(errs, cfg.reportCols);
+    var cell = function (v) { return String(v == null ? '' : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : v).replace(/[\t\r\n]+/g, ' '); };
+    return UI.copy([sh.headers].concat(sh.rows).map(function (r) { return r.map(cell).join('\t'); }).join('\n'), errs.length + ' error row' + (errs.length === 1 ? '' : 's'));
+  }
+  function reportAll() { return src().filter(function (it) { return it.result || !applicable(it); }); }
+  function reportExcel() { return X.download(mod + '_report_' + U.stamp() + '.xlsx', [reportSheet(reportAll(), cfg.reportCols)]); }
+  function reportCsv() { X.downloadCsv(mod + '_report_' + U.stamp() + '.csv', reportSheet(reportAll(), cfg.reportCols)); UI.toast('Report saved as CSV.', 'ok'); }
+  function errorsButton(kind) {
+    var main = UI.btn('Download errors', { icon: 'download', kind: kind || 'quiet', title: 'Excel: ' + (cfg.errorRows ? 'the rows to fix (Errors) and the result list (Result)' : 'the result list of the rows that failed'), onClick: errorsExcel });
+    return UI.splitBtn(main, [{ header: 'Rows with errors' },
+      { icon: 'download', label: 'Excel (.xlsx)', sub: cfg.errorRows ? 'Errors to fix and upload again + Result' : 'Result list', right: 'default', onClick: function () { UI.busy(main, errorsExcel); } },
+      { icon: 'download', label: 'CSV (.csv)', sub: cfg.errorRows ? 'Errors to fix and upload again' : 'Result list', onClick: errorsCsv },
+      'hr',
+      { icon: 'copy', label: 'Copy errors', sub: 'Tab-separated, to paste into a sheet or a message', onClick: copyErrors }], 'Download errors');
+  }
+  function templateCsv() { return captureCsv(cfg.template, mod + '_template'); }
+
+  /* ---------- 1. choose ---------- */
   function stepChoose() {
-    st.set(0);
-    var tplBtn = cfg.template ? UI.btn('Download template', { icon: 'template', onClick: cfg.template }) : null;
+    setStep(0);
+    var tplBtn = null;
+    if (cfg.template) {
+      tplBtn = UI.btn('Download template', { icon: 'template', onClick: cfg.template });
+      if (cfg.csv) tplBtn = UI.splitBtn(tplBtn, [{ header: 'Template' },
+        { icon: 'download', label: 'Excel (.xlsx)', sub: 'Every sheet, with reference data', right: 'default', onClick: function () { UI.busy(tplBtn.firstChild, cfg.template); } },
+        { icon: 'download', label: 'CSV (.csv)', sub: 'The upload sheet only', onClick: function () { templateCsv().catch(function (e) { UI.toast(e.message, 'bad'); }); } }], 'Download template');
+    }
     var dz = UI.drop({
       onFile: async function (f) {
-        fileName = f.name;
-        var file = await X.read(f, { sheet: cfg.sheet });
-        if (!file.rows.length) throw new Error('No data rows found in ' + f.name);
-        U.swap(body, h('div.card', h('span.spin'), '  Reading ' + file.rows.length + ' row(s) and comparing with ' + Api.envLabel() + '…'));
-        try { items = await cfg.parse(file); }
-        catch (e) { stepChoose(); UI.toast(e.message, 'bad'); return; }
+        var rd = await X.read(f, { sheet: cfg.sheet });
+        if (!rd.rows.length) throw new Error('No data rows found in ' + f.name);
+        fileName = f.name; file = rd; done = {}; last = null;
+        U.swap(body, h('div.card', h('span.spin'), '  Reading ' + rd.rows.length + ' row(s) and comparing with ' + Api.envLabel() + '…'));
+        try { items = identify(await cfg.parse(rd)); }
+        catch (e) { items = []; stepChoose(); UI.toast(e.message, 'bad'); return; }
         stepReview();
       }
     });
+    var keep = items.length && file ? UI.note('info', null, h('span', h('b', fileName), ' is still loaded' + (last ? ' (applied rows stay marked)' : '') + '. ',
+      h('button.linkbtn', { type: 'button', onclick: function () { last ? recheck() : stepReview(); } }, 'Back to review →'))) : null;
     U.swap(body,
       cfg.intro ? (cfg.intro instanceof Node ? cfg.intro : UI.note('info', null, cfg.intro)) : null,
+      keep,
       h('div.row', { style: { marginBottom: '14px' } }, tplBtn, cfg.extraActions || null),
       dz);
   }
 
+  /* ---------- 2. review ---------- */
   function stepReview() {
-    st.set(1);
+    setStep(1);
     var by = function (k) { return items.filter(function (i) { return i.kind === k; }).length; };
     var cnt = [];
+    if (by('done')) cnt.push({ n: by('done'), label: 'Already applied', kind: 'ok' });
     if (by('new')) cnt.push({ n: by('new'), label: 'New', kind: 'new' });
     if (by('upd')) cnt.push({ n: by('upd'), label: 'Updated', kind: 'upd' });
     if (by('del')) cnt.push({ n: by('del'), label: 'To delete', kind: 'bad' });
@@ -132,8 +262,9 @@ function uploadFlow(cfg) {
     cnt.push({ n: by('bad'), label: 'Errors', kind: 'bad' });
 
     var sel = new Set();
-    items.forEach(function (it, i) { it.__k = String(i); it.__lock = !applicable(it); if (applicable(it)) sel.add(it.__k); });
+    items.forEach(function (it) { it.__lock = !applicable(it); if (applicable(it)) sel.add(it.__k); });
     var applyBtn = UI.btn('', { kind: 'primary', icon: 'play' });
+    R.applyBtn = applyBtn;
     function label() { U.swap(applyBtn, U.icon('play', 18), h('span', 'Apply ' + sel.size + ' ' + (cfg.verb || 'change') + (sel.size === 1 ? '' : 's'))); applyBtn.disabled = !sel.size; }
     var filter = 'all';
     var list = items.slice();
@@ -142,7 +273,7 @@ function uploadFlow(cfg) {
       { key: 'kind', label: 'Action', render: function (it) { return UI.chip((KIND[it.kind] || {}).label || it.kind, (KIND[it.kind] || {}).chip); }, text: function (it) { return (KIND[it.kind] || {}).label; } },
       { key: 'label', label: cfg.itemLabel || 'Item', wrap: true },
       { key: 'changes', label: 'What changes', wrap: true, render: changesCell, text: function (it) { return (it.error || '') + (it.changes || []).map(function (c) { return c.field + ' ' + c.to; }).join(' '); } }
-    ], list, { select: true, selected: sel, rowKey: function (it) { return it.__k; }, onSelect: label });
+    ], list, { select: true, selected: sel, rowKey: function (it) { return it.__k; }, onSelect: label, label: 'Review' });
     var chipsBar = h('div.row', { style: { margin: '6px 0 2px' } });
     [['all', 'All'], ['change', 'Changes only'], ['bad', 'Errors']].forEach(function (f) {
       var b = UI.btn(f[1], { sm: true, kind: f[0] === filter ? '' : 'quiet' });
@@ -159,49 +290,111 @@ function uploadFlow(cfg) {
     var errs = items.filter(function (i) { return i.kind === 'bad'; });
     U.swap(body,
       h('div.row', h('span.muted', fileName), h('span', { style: { flex: 1 } }),
-        errs.length ? UI.btn('Download errors', { icon: 'download', kind: 'quiet', onClick: function () { return X.download((cfg.module || 'upload').replace(/\W+/g, '_') + '_errors_' + U.stamp() + '.xlsx', [reportSheet(errs, cfg.reportCols)]); } }) : null,
-        UI.btn('Choose another file', { kind: 'quiet', icon: 'back', onClick: stepChoose }),
+        errs.length ? errorsButton('quiet') : null,
+        UI.btn('Choose another file', { kind: 'quiet', icon: 'back', title: 'Back to step 1 (Alt ←)', onClick: stepChoose }),
         applyBtn),
+      by('done') ? UI.note('ok', null, by('done') + ' row' + (by('done') === 1 ? ' was' : 's were') + ' applied in this run and ' + (by('done') === 1 ? 'is' : 'are') + ' locked: ' + (by('done') === 1 ? 'it is' : 'they are') + ' never sent again.') : null,
       UI.counts(cnt),
       by('upd') && cfg.blankNote ? UI.note('info', null, typeof cfg.blankNote === 'function' ? cfg.blankNote() : cfg.blankNote) : null,
       chipsBar, tbl);
   }
 
+  /* Back to the review after a run: read Beeforce again with the same parse, keep applied rows locked. */
+  async function recheck() {
+    if (!file) return stepChoose();
+    setStep(1);
+    U.swap(body, h('div.card', h('span.spin'), '  Checking ' + fileName + ' against ' + Api.envLabel() + ' again…'));
+    try { items = identify(await cfg.parse(file)); }
+    catch (e) { UI.toast('Could not check again: ' + e.message + ' Showing the last review.', 'bad'); items.forEach(function (it) { if (done[it.__id]) { it.kind = 'done'; it.result = done[it.__id]; } }); }
+    stepReview();
+  }
+
+  /* ---------- 3. apply ---------- */
   async function stepApply(todo) {
+    todo = todo.filter(function (it) { return applicable(it) && !done[it.__id]; });   // never re-send an applied row
     var n = todo.length;
+    if (!n) { UI.toast('Nothing left to apply.'); return; }
     var nn = todo.filter(function (i) { return i.kind === 'new'; }).length, nu = todo.filter(function (i) { return i.kind === 'upd'; }).length, nd = todo.filter(function (i) { return i.kind === 'del'; }).length;
     var parts = [];
     if (nn) parts.push(nn + ' new'); if (nu) parts.push(nu + ' update' + (nu > 1 ? 's' : '')); if (nd) parts.push(nd + ' delete' + (nd > 1 ? 's' : ''));
     var ok = await UI.confirm({ title: 'Apply ' + n + ' ' + (cfg.verb || 'change') + (n === 1 ? '' : 's') + '?', body: (parts.join(', ') || n + ' item(s)') + (cfg.module ? ' in ' + cfg.module + '.' : '.'), verb: 'Apply ' + n, danger: nd > 0 });
     if (!ok) return;
-    st.set(2);
     ctx.Audit.newTransaction();
     var panel = UI.runPanel('Applying ' + n + ' ' + (cfg.verb || 'change') + (n === 1 ? '' : 's') + ' to ' + Api.envLabel());
+    run = { panel: panel, todo: todo, back: false };
+    panel.addBack(backFromRun);
+    setStep(2);
     U.swap(body, panel);
     panel.set(0, n);
     var res = await runQueue(panel, todo, { gap: cfg.gap });
+    res.ok.forEach(function (it) { done[it.__id] = it.result; });
+    var wentBack = run && run.back;
+    run = null;
     panel.finish(res.ok.length + ' succeeded · ' + res.failed.length + ' failed');
-    stepReport(todo, res, panel);
+    last = { todo: todo, res: res, panel: panel, items: items.slice() };
     cfg.onDone && cfg.onDone(res);
     ctx.Shell && ctx.Shell.noteRun(cfg.module, res.ok.length, res.failed.length);
+    if (wentBack) return recheck();
+    stepReport();
+  }
+  /* Paused (or running): ask, stop after the current item, then review again with applied rows locked. */
+  async function backFromRun() {
+    if (!run || run.back) return;
+    var r = run, sent = r.todo.filter(function (it) { return it.result; }).length;
+    // not UI.confirm: going back changes nothing in Beeforce, so no "This changes data in…" box
+    var ok = await UI.dialog(function (box, close) {
+      U.append(box, [h('h2', 'Stop and go back to the review?'),
+        h('p.muted', { style: { margin: '0 0 6px' } }, 'The run stops after the item in progress. ' + sent + ' of ' + r.todo.length + ' already sent stay as they are; rows that succeeded are locked in the review and never sent again.'),
+        h('p.muted', { style: { margin: 0 } }, 'Rows not sent yet go back to the review, where you can apply them again.'),
+        h('div.acts', h('button.btn.quiet', { type: 'button', onclick: function () { close(false); } }, 'Keep applying'),
+          h('button.btn.primary', { type: 'button', onclick: function () { close(true); } }, 'Stop and go back'))]);
+    }).then(function (v) { return v === true; });
+    if (!ok || run !== r) return;
+    r.back = true;
+    r.panel.ctrl.stopped = true; r.panel.ctrl.paused = false;
+    r.panel.log('Going back to the review after the current item…', 'w');
   }
 
-  function stepReport(todo, res, panel) {
-    st.set(3);
-    var all = items.filter(function (it) { return it.result || !applicable(it); });
-    U.append(body, [
+  /* ---------- 4. report ---------- */
+  function stepReport() {
+    if (!last) return;
+    setStep(3);
+    var res = last.res, errs = errorItems();
+    if (!body.contains(last.panel)) U.swap(body, last.panel);
+    Array.prototype.slice.call(body.querySelectorAll('.reportbox')).forEach(function (x) { x.remove(); });
+    var rep = UI.btn('Download report', { icon: 'download', kind: 'primary', onClick: reportExcel });
+    var earlier = Object.keys(done).length - res.ok.length;
+    U.append(body, [h('div.reportbox',
       UI.counts([{ n: res.ok.length, label: 'Succeeded', kind: 'ok' }, { n: res.failed.length, label: 'Failed', kind: 'bad' }]),
+      earlier > 0 ? UI.note('ok', null, earlier + ' more row' + (earlier === 1 ? ' was' : 's were') + ' applied earlier in this flow. The report file lists every row with its result.') : null,
       h('div.acts',
-        UI.btn('Download report', { icon: 'download', kind: 'primary', onClick: function () { return X.download((cfg.module || 'upload').replace(/\W+/g, '_') + '_report_' + U.stamp() + '.xlsx', [reportSheet(all, cfg.reportCols)]); } }),
+        UI.splitBtn(rep, [{ header: 'Every row with its result' },
+          { icon: 'download', label: 'Excel (.xlsx)', right: 'default', onClick: function () { UI.busy(rep, reportExcel); } },
+          { icon: 'download', label: 'CSV (.csv)', onClick: reportCsv }], 'Download report'),
+        errs.length ? errorsButton('') : null,
         res.failed.length ? UI.btn('Retry ' + res.failed.length + ' failed', { icon: 'retry', onClick: function () { stepApply(res.failed.slice()); } }) : null,
-        UI.btn('Start over', { kind: 'quiet', icon: 'upload', onClick: stepChoose }))
-    ]);
+        UI.btn('Back to review', { kind: 'quiet', icon: 'back', title: 'Check the file against ' + Api.envLabel() + ' again; applied rows stay locked (Alt ←)', onClick: recheck }),
+        UI.btn('Start over', { kind: 'quiet', icon: 'upload', onClick: function () { items = []; file = null; done = {}; last = null; stepChoose(); } })))]);
   }
 
   stepChoose();
-  el.reset = stepChoose;
+  el.reset = function () { items = []; file = null; done = {}; last = null; stepChoose(); };
   return el;
 }
+
+/* Alt ← / Alt → step through the visible flow (registered once per page; the latest load handles it). */
+window.__bftFlowKey = function (e) {
+  if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  var app = ctx.appEl;
+  if (!app || !app.isConnected || app.classList.contains('min') || app.querySelector('.scrim') || (UI.menuOpen && UI.menuOpen())) return;
+  var path = e.composedPath ? e.composedPath() : [];
+  if (path.some(function (n) { return n && n.nodeType === 1 && (/^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName) || n.isContentEditable); })) return;
+  var flow = Array.prototype.filter.call(app.querySelectorAll('.work.on .page:not([hidden]) .flow'), function (f) { return f.offsetParent; })[0];
+  if (!flow || !flow.stepKey) return;
+  e.preventDefault(); e.stopPropagation();
+  flow.stepKey(e.key === 'ArrowLeft' ? -1 : 1);
+};
+if (!window.__bftFlowKeyOn) { window.__bftFlowKeyOn = true; document.addEventListener('keydown', function (e) { if (window.__bftFlowKey) window.__bftFlowKey(e); }, true); }
 
 /* =========================================================
  * entity(view, cfg) — standard config tool: Upload (create/update with diff) + Browse (export, delete).
@@ -259,7 +452,8 @@ function entity(view, cfg) {
     H.forEach(function (k) { var m = fileCols.filter(function (c) { return norm(c) === norm(k); })[0]; if (m) colMap[k] = m; });
     // accept "id" for "id (blank=create)" and similar
     if (!colMap[idCol]) { var alt = fileCols.filter(function (c) { return norm(c) === 'id' || norm(c).indexOf(norm(idCol).slice(0, 6)) === 0; })[0]; if (alt) colMap[idCol] = alt; }
-    var unknown = fileCols.filter(function (c) { return !Object.keys(colMap).some(function (k) { return colMap[k] === c; }); });
+    // the Error / Stage / Row in file columns of a v3.9 error file are expected extras: ignored without a message
+    var unknown = fileCols.filter(function (c) { return ERR_COLS.indexOf(c) < 0 && !Object.keys(colMap).some(function (k) { return colMap[k] === c; }); });
 
     var items = file.rows.map(function (r) {
       var row = {};
@@ -304,7 +498,7 @@ function entity(view, cfg) {
   }
 
   function browse(bodyEl) {
-    var holder = h('div', h('div.card', h('span.spin'), '  Loading ' + noun + 's from ' + Api.envLabel() + '…'));
+    var holder = h('div', UI.skeleton('Loading ' + noun + 's from ' + Api.envLabel() + '…'));
     U.append(bodyEl, [holder]);
     async function draw(force) {
       var refs = await loadRefs();
@@ -315,11 +509,19 @@ function entity(view, cfg) {
       var delBtn = UI.btn('Delete selected', { icon: 'trash', kind: 'quiet', sm: true });
       delBtn.disabled = true;
       var tbl = UI.table(show, rows, {
-        select: cfg.canDelete !== false, rowKey: function (r) { return String(r.id); },
+        select: cfg.canDelete !== false, rowKey: function (r) { return String(r.id); }, label: cap(noun) + 's',
+        rowMenu: function (r) {
+          var id = String(r.id), name = cfg.labelOf ? cfg.labelOf(r) : id;
+          return [{ header: name + ' · id ' + id },
+            { icon: 'copy', label: 'Copy id', onClick: function () { UI.copy(id, 'Id'); } },
+            { icon: 'code', label: 'Show JSON', sub: 'As read from ' + Api.envLabel(), onClick: function () { UI.codeDialog(cap(noun) + ' ' + id + ' · JSON', JSON.stringify(r.__rec, null, 2), { what: 'JSON', filename: mod.replace(/\W+/g, '_').toLowerCase() + '_' + id + '.json', mime: 'application/json', note: 'Read from ' + Api.envLabel() + '. Copying or downloading sends nothing.' }); } },
+            cfg.canDelete !== false ? 'hr' : null,
+            cfg.canDelete !== false ? { icon: 'trash', label: 'Delete…', danger: true, onClick: function () { runDeletes([{ kind: 'del', ref: id, label: name + ' (id ' + id + ')', run: function () { return remove(id); } }], mod, noun).then(function (x) { if (x) draw(true); }); } } : null];
+        },
         onSelect: function (s) { delBtn.disabled = !s.size; U.swap(delBtn, U.icon('trash', 16), h('span', s.size ? 'Delete ' + s.size : 'Delete selected')); },
         toolbar: [
           UI.btn('Refresh', { icon: 'retry', sm: true, kind: 'quiet', onClick: function () { return draw(true); } }),
-          UI.btn('Export for editing', { icon: 'download', sm: true, onClick: function () { return template(true); } }),
+          exportButton(function () { return template(true); }),
           cfg.canDelete !== false ? delBtn : null
         ]
       });
@@ -337,7 +539,7 @@ function entity(view, cfg) {
   }
 
   view.appendChild(UI.tabs([
-    { id: 'upload', label: 'Create / update', render: function (b) { b.appendChild(uploadFlow({ module: mod, template: function () { return template(false); }, parse: parse, itemLabel: cap(noun), blankNote: function () { return 'Columns that are missing or left blank keep their current value in ' + Api.envLabel() + '. To empty a value, type CLEAR in the cell.'; }, intro: cfg.intro || 'Leave the id blank to create a new ' + noun + '. Fill the id to update an existing one. Tip: use “Export for editing” in Browse to get current data in this format.', reportCols: cfg.reportCols })); } },
+    { id: 'upload', label: 'Create / update', render: function (b) { b.appendChild(uploadFlow({ module: mod, template: function () { return template(false); }, parse: parse, errorRows: true, csv: true, itemLabel: cap(noun), blankNote: function () { return 'Columns that are missing or left blank keep their current value in ' + Api.envLabel() + '. To empty a value, type CLEAR in the cell.'; }, intro: cfg.intro || 'Leave the id blank to create a new ' + noun + '. Fill the id to update an existing one. Tip: use “Export for editing” in Browse to get current data in this format.', reportCols: cfg.reportCols })); } },
     { id: 'browse', label: 'Browse & export', render: browse }
   ].concat(cfg.extraTabs || [])));
 }
@@ -379,4 +581,4 @@ function same(a, b) {
 }
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
-ctx.Engine = { runQueue: runQueue, uploadFlow: uploadFlow, entity: entity, runDeletes: runDeletes, reportSheet: reportSheet, applicable: applicable, same: same };
+ctx.Engine = { ERR_COLS: ERR_COLS, exportButton: exportButton, runQueue: runQueue, uploadFlow: uploadFlow, entity: entity, runDeletes: runDeletes, reportSheet: reportSheet, applicable: applicable, same: same };
