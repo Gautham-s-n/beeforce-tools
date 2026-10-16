@@ -1,4 +1,13 @@
-/* core/styles.js — all styling. Lives inside a shadow root, so it cannot leak into Beeforce (or the reverse). */
+/* core/styles.js — all styling. Lives inside a shadow root, so it cannot leak into Beeforce (or the reverse).
+ *
+ * v3.10: the v3.6.1 look and layout (320px side pane at every width), plus
+ *   - motion levels on .app as data-motion="full|calm|off" (Appearance; see U.motion() in core/util.js): full = the
+ *     original choreography, calm = short and settled (default), off = no movement, short fades only. The operating
+ *     system's "reduce motion" setting selects off unless the user explicitly overrode it in Appearance;
+ *   - accessibility fixes: a focus ring on hexagons distinct from the honey hover, text ≥4.5:1, field borders ≥3:1,
+ *     hidden panes out of the Tab order;
+ *   - shared tokens used by the components (menus, dialogs, tables, search, write flow): --r*, --t*, --mono,
+ *     --focusring, --honeyedge, --fieldline, --settle, with values that match the v3.6.1 look. */
 'use strict';
 
 var HEX = 'polygon(50% 0,100% 25%,100% 75%,50% 100%,0 75%,0 25%)';
@@ -262,7 +271,106 @@ ctx.CSS = [
 '.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}',
 'details summary{cursor:pointer;color:var(--ink2);font-size:13px}',
 'pre.code{background:var(--well);border:1px solid var(--line);border-radius:12px;padding:12px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;color:var(--ink2);max-height:320px}',
-'@media (prefers-reduced-motion:reduce){.app *{transition:none!important;animation:none!important}}'
+
+/* ---------- v3.10: shared tokens (v3.6.1 look) ---------- */
+'.app{--r4:4px;--r6:8px;--r8:10px;--r10:10px;--r12:14px;--r14:16px;--t12:12.5px;--t13:13.5px;--t15:15px;--t18:18px;--t24:26px;--t32:38px;',
+'  --mono:ui-monospace,"SF Mono",Consolas,"Liberation Mono",monospace;--settle:cubic-bezier(.22,1,.36,1);--focusring:#5B9BFF;--honeyedge:var(--honey);--fieldline:#5C6B86;',
+/* contrast (a11y): muted text ≥4.5:1 on panels and faces; field borders ≥3:1 */
+'  --ink3:#8C9AB0;--cellink3:#B0BDD1;--honeyink2:#4A380E}',
+'.app[data-theme=light]{--focusring:#0B5CC7;--fieldline:#7F8CA1;--ink3:#5F6C82;--cellink3:#5F6C82;--honey:#9A6400;--honeyedge:#D99412;--ok:#0E7A4D}',
+/* tool counts and hints on the hexagons: readable on the area, tool and hover faces (≥ 4.5:1) */
+'.cell .ct,.cell .ht{color:var(--cellink3)}',
+':focus-visible{outline-color:var(--focusring)}',
+/* icon buttons: the focus ring appears at once (v3.6.1 transitioned every property, so the ring faded in) */
+'.iconbtn{transition:background .15s,color .15s,border-color .15s}',
+'.input{border-color:var(--fieldline)}.input:hover{border-color:var(--ink3)}',
+/* hexagon focus: a blue ring, so keyboard focus is not mistaken for the honey hover */
+'.cell:focus-visible .rim{background:var(--focusring)}',
+'.cell:focus-visible{filter:drop-shadow(0 0 1px var(--focusring)) drop-shadow(0 0 4px var(--focusring))}',
+'.cell.hub:focus-visible .rim{background:var(--focusring)}',
+/* hidden panes and screens leave the Tab order */
+'.sidepane{transition:opacity .3s var(--ease),transform .4s var(--ease),visibility 0s}',
+'.sidepane.off{visibility:hidden;transition:opacity .3s var(--ease),transform .4s var(--ease),visibility 0s .3s}',
+'.work{visibility:hidden;transition:opacity .35s var(--ease),transform .45s var(--ease),visibility 0s .45s}',
+'.work.on{visibility:inherit;transition:opacity .35s var(--ease),transform .45s var(--ease),visibility 0s}',
+
+/* ---------- motion: calm (default) ----------
+ * Cells are moved by the Web Animations API in core/shell.js layout(); CSS only handles hover. */
+'.app[data-motion=calm] .cell{transition:filter .2s var(--ease)}',
+'.app[data-motion=calm] .work{transform:translateX(8px);transition:opacity .2s var(--ease),transform .24s var(--settle),visibility 0s .24s}',
+'.app[data-motion=calm] .work.on{transform:none;transition:opacity .2s var(--ease),transform .24s var(--settle),visibility 0s}',
+'.app[data-motion=calm] .sidepane{transition:opacity .2s var(--ease),transform .24s var(--settle),visibility 0s}',
+'.app[data-motion=calm] .sidepane.off{transform:translateX(-6px);transition:opacity .2s var(--ease),transform .24s var(--settle),visibility 0s .2s}',
+
+/* ---------- motion: off ----------
+ * No movement anywhere: things appear with a short fade, hover/selection still change colour, progress still shows.
+ * Covers module styles too (dev panel, admin settings) through the general rule. */
+'.app[data-motion=off] *,.app[data-motion=off] *::before,.app[data-motion=off] *::after{transition-duration:.12s!important;transition-delay:0s!important;animation-duration:.12s!important;animation-delay:0s!important;animation-iteration-count:1!important;scroll-behavior:auto!important}',
+'.app[data-motion=off] .cell{transition:none!important}',
+'.app[data-motion=off] .cell .tl,.app[data-motion=off] .cell .ic,.app[data-motion=off] .cell:hover .ic{transform:none!important}',
+'.app[data-motion=off] .cell.mini .ic{transform:scale(2.3)!important}',
+'.app[data-motion=off] :is(.tabbody,.gsec,.ccard,.toast,.menu,.lcard,.slotmark,.acc-body){animation-name:fadein!important}',
+'.app[data-motion=off] :is(.sidepane,.work,.gallery,.side,.modhead,.modfoot,.peek,.tip,.dlg,.dock,.dock .dhex,.dock .dlabel,.devpanel,.drop,.btn,.gtile,.lcard,.lhex i,.login),.app[data-motion=off].min>:not(.dock):not(.toasts){transform:none!important}',
+'.app[data-motion=off] .arrbar{transform:translate(-50%,0)!important}.app[data-motion=off] .pal{transform:translate(-50%,0)!important}',
+'.app[data-motion=off] .spin{animation-duration:1.6s!important;animation-iteration-count:infinite!important}',
+'.app[data-motion=off] .cell.nope .tl{animation:none!important}.app[data-motion=off] .cell.nope .rim{animation:nopec .7s linear 1!important}',
+'@keyframes nopec{0%,75%{background:var(--bad)}}',
+'.app[data-motion=off] .backlight{display:none}',
+'.app[data-motion=off] .cell:hover:not(.gone):not(:focus-visible){filter:none}',
+'@keyframes fadein{from{opacity:0}to{opacity:1}}',
+/* top bar on smaller windows: the controls keep their size; the breadcrumb is cut off instead of running under them */
+'.top>:not(.crumb):not(.topgap){flex:none}',
+'.crumb{overflow:clip;overflow-clip-margin:4px}.crumb button{white-space:nowrap}',
+/* narrow windows (v3.6.1 layout): the side pane stays 320px and the page scrolls sideways instead of cutting off the
+ * top-bar buttons and the workspace; overlays stay on screen while it is scrolled */
+'.app{overflow-x:auto;overflow-y:hidden}',
+'.app>.top,.app>.body{min-width:980px}',
+'.app>.body{overflow:hidden}',
+'@media (max-width:1100px){.top{gap:12px;padding:0 20px}}',
+'.app::before,.scrim,.toasts{position:fixed}',
+/* search results: long hints shorten instead of pushing the area / shortcut text onto several lines */
+'.pal li button b{white-space:nowrap}',
+'.pal li button span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+'.pal li button em{white-space:nowrap;flex:none}',
+'@media (max-width:560px){.pal li button span{display:none}}',
+
+/* ---------- v3.11 "Hive" theme: warm graphite dark (direction C), light first in Atlassian structure ----------
+ * Flat surfaces, 1px hairlines, 3px controls / 4px containers, no glows or gradients (the honey hub keeps its gradient).
+ * Borrowed rules: flat tables and square fields (IBM Carbon), outlined badges (GitHub Primer).
+ * Roles: ink = actions (primary button is ink on paper / paper on ink), honey = where you are and what is selected. */
+'.app{--bg:#191816;--panel:#211F1C;--panel2:#262420;--panel3:#2F2C27;--line:#34302A;--line2:#4A453C;--ink:#ECE6DA;--ink2:#B4AC9C;--ink3:#A39A88;--cellink3:#B4AC9C;--field:#262420;--fieldline:#7D766A;--blue:#ECE6DA;--bluehover:#FFFFFF;--onaccent:#191816;--blue2:#E9A825;--blue3:#D9C9A3;--bluebg:#2E2614;--honey:#E9A825;--honeybg:#2E2614;--honeyedge:#E9A825;--prod:#9CC27A;--uat:#E9A825;--bad:#EE7A6A;--badbg:#2C1916;--ok:#9CC27A;--okbg:#1E2618;--warnbg:#2E2614;--well:#1D1C19;--well2:#191816;--glow:#191816;--topbg:#191816;--cellglow:transparent;--cellhover:#2F2C27;--pip:#7E766A;--toolface:#211F1C;--ghostrim:#2A2723;--peekline:#4A453C;--shadow:#000;--danger:#EE7A6A;--dangerhover:#F28E80;--inputhover:#8C8475;--focus:transparent;--dropover:#262420;--chipbg:transparent;--rowhover:#23211E;--rowsel:#2A2418;--scrim:#0f0e0ccc;--badline:#EE7A6A66;--lcardbg:#211F1C;--badrow:#2C1916;--badrowh:#331D19;--warnrow:#2A2418;--ringtrack:#2E2614;--honeyglow:transparent;--cellshadow:#0000008c;--modface:#211F1C;--blcore:rgba(233,168,37,.20);--blmid:rgba(233,168,37,.07);--areaface:#211F1C;--toolface2:#211F1C;--hoverface:#2A2723;--focusring:#E9A825;--elev:0 8px 24px rgba(0,0,0,.45)}',
+'.app[data-theme=light]{--bg:#F6F5F2;--panel:#FFFFFF;--panel2:#FFFFFF;--panel3:#EFEDE8;--line:#E3E0D9;--line2:#CCC7BD;--ink:#1F1D1A;--ink2:#4F4A43;--ink3:#6B655C;--cellink3:#6B655C;--field:#F3F1EC;--fieldline:#8C867B;--blue:#2A2723;--bluehover:#000000;--onaccent:#FFFFFF;--blue2:#B57A00;--blue3:#6B4A00;--bluebg:#FDF6E7;--honey:#9A6400;--honeybg:#FDF6E7;--honeyedge:#D99412;--prod:#1F8A57;--uat:#9A6400;--bad:#AE2E24;--badbg:#FFECEB;--ok:#216E4E;--okbg:#E3F4EA;--warnbg:#FDF6E7;--well:#FFFFFF;--well2:#F6F5F2;--glow:#F6F5F2;--topbg:#FFFFFF;--cellglow:transparent;--cellhover:#F6F5F2;--pip:#A39E94;--toolface:#FFFFFF;--ghostrim:#ECE9E3;--peekline:#CCC7BD;--shadow:#2A272326;--danger:#C9372C;--dangerhover:#AE2E24;--inputhover:#6B655C;--focus:transparent;--dropover:#FBF8F1;--chipbg:transparent;--rowhover:#FAF9F6;--rowsel:#FDF6E6;--scrim:#1F1D1A66;--badline:#AE2E2466;--lcardbg:#FFFFFF;--badrow:#FFF1F0;--badrowh:#FFE4E1;--warnrow:#FFF8E8;--ringtrack:#F2E6C8;--honeyglow:transparent;--cellshadow:#2A272333;--modface:#FFFFFF;--blcore:rgba(217,148,18,.16);--blmid:rgba(217,148,18,.06);--areaface:#FFFFFF;--toolface2:#FFFFFF;--hoverface:#FFFCF5;--focusring:#B57A00;--elev:0 8px 24px rgba(42,39,35,.14),0 0 0 1px rgba(42,39,35,.05)}',
+'.app::before{background:var(--bg)}',
+'.top{backdrop-filter:none}.top::before{display:none}',
+'.envpill{border-radius:3px;background:transparent;border-color:var(--line2)}.envpill i,.envpill.uat i{box-shadow:none}',
+'.who{border-radius:3px}.av{background:var(--honeyedge);color:#1F1D1A}',
+'.iconbtn,.crumb button,.searchbtn,.rec,.seg,.seg button,.chipfile,.envbox,.toast,.log,pre.code,.note,.searchbtn kbd,.kbd{border-radius:3px}',
+'.card,.counts,.peek,.run,.drop,.empty,.dlg,.pal,.lcard{border-radius:4px}',
+'.dlg,.pal,.peek,.lcard{box-shadow:var(--elev)}.lcard{backdrop-filter:none}',
+'.searchbtn:hover{border-color:var(--ink3)}',
+'.rec.on{color:var(--ink)}',
+'.btn{border-radius:3px;background:transparent;border-color:var(--line2);min-height:36px;padding:7px 14px}',
+'.btn:hover{background:var(--panel3);border-color:var(--line2)}',
+'.btn.primary:hover{background:var(--bluehover);border-color:var(--bluehover);box-shadow:none}',
+'.btn.quiet{border-color:transparent}.btn.quiet:hover{background:var(--panel3);border-color:transparent}',
+'.btn.sm{min-height:30px;border-radius:3px}',
+'.input{border-radius:0;border:0;border-bottom:1px solid var(--fieldline);background:var(--field)}',
+'.input:hover{border-bottom-color:var(--inputhover)}',
+'.input:focus{box-shadow:none;border-bottom-color:var(--focusring);outline:2px solid var(--focusring);outline-offset:-2px}',
+'.tab::after{left:0;right:0;height:2px;border-radius:0;background:var(--honeyedge)}',
+'.step.done .hx{background:var(--ink2)}.step.done .hx b{background:var(--panel3)}.steps .bar i{background:var(--ink2)}',
+'.drop{border-radius:4px;background:transparent}.drop .dh{background:var(--honeybg);color:var(--honey)}',
+'.counts{border-color:var(--line)}',
+'.chip{background:transparent;border:1px solid var(--line2);font-weight:600;padding:1px 9px}',
+'.chip.new,.chip.upd,.chip.bad,.chip.ok{background:transparent;border-color:color-mix(in srgb,currentColor 55%,transparent)}',
+'.chip.new{color:var(--blue3)}',
+'.twrap{border:0;border-radius:0;background:transparent}',
+'th{background:var(--panel3);color:var(--ink);border-bottom:0}',
+'tbody tr{background:var(--panel)}',
+'td input[type=checkbox],th input[type=checkbox],.check input{accent-color:var(--ink)}',
+'.run{border-radius:4px}.pbar{height:4px;border-radius:0;background:var(--panel3)}.pbar i{border-radius:0;background:var(--honeyedge)}',
+'.note::before{width:3px;border-radius:0}',
+'.cell .rim{background:var(--line2)}'
 ].join('\n');
 
 // Fonts must be registered on the document (shadow roots share document.fonts).

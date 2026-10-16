@@ -1,4 +1,4 @@
-# APIary (v3.9.0)
+# APIary (v3.14.0)
 
 APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
@@ -40,7 +40,15 @@ Change these later from the sign-in card ("Sign-in & audit setup") or Admin Sett
 
 Open app.beeforce.in (or UAT), click the bookmark, sign in, choose a module, pick an area, then a tool.
 
-**Arrange** (the button at the top right of the honeycomb, or Arrange in the user menu) to make the honeycomb your own: movable hexagons get a honey outline (and wiggle in Full motion), empty places show as
+**Saved passwords (Chrome and Edge):** when the sign-in card opens, APIary asks the browser for the Beeforce password
+it saved for this site. The browser shows its own account picker, and the card is filled with the account you pick.
+APIary never signs in by itself (check Production / UAT, then click Sign in) and never stores the password. After a
+sign-in the browser may offer to save or update the password. **Use a saved password** under the password field asks
+again. If nothing comes back, APIary asks only once per tab. Passwords saved for app.beeforce.in are separate from
+those for app-uat.beeforce.in. The admin console password is never offered to the browser. Firefox and Safari: type
+the password as before.
+
+**Arrange** (the four-arrow button in the top bar) to make the honeycomb your own: movable hexagons get a honey outline (and wiggle in Full motion), empty places show as
 dashed outlines. Drag an area to any of the 18 places around the centre cell (drop it on another area to swap), click
 an area and drag its tools to any of its 6 places, or drag module tiles on the module page to change their order.
 Every drop is saved in this browser straight away; **Reset** puts the current level back, **Done** (or `Esc`) ends it.
@@ -52,7 +60,7 @@ exactly where you were, with any loaded file, review or results still there. **C
 bookmark then reopens it on the same tool (files you had loaded are gone). While APIary is minimized, the bookmark
 restores it instead of loading updates; close it with `×` first to pick up a new version. A full page reload in
 Beeforce also removes it (the bookmark then reopens on the same tool). `Ctrl K` finds
-any tool, area or action in any module (the search field in the top bar does the same), arrow keys move between hexagons, `1`–`8` open areas, `Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute
+any tool, area or action in any module (the search icon in the top bar does the same), arrow keys move between hexagons, `Esc` goes back one level. Closing the overlay keeps you signed in for the rest of the 120-minute
 session; clicking the bookmark again in that session goes straight back to your module.
 
 - **Module page** (after sign-in): Attendance, Onboarding, Core. A module without tools yet shows "Coming soon".
@@ -60,15 +68,11 @@ session; clicking the bookmark again in that session goes straight back to your 
   (click it to come back to the module page). The top-left pill also switches module.
   Tick **"Skip this page next time and open the module I choose"** to go straight to your module at sign-in.
 - **Keyboard:** arrow keys move between hexagons, `Enter` opens, `Esc` goes back one level (tool → area → module →
-  module page), `Ctrl K` searches, `?` lists every key.
-  - `1`–`8` open the areas of the home honeycomb (the numbers show when you point at an area). They never act while you
-    type in a field. Turn them off in **Appearance → Area number shortcuts**; "Always show numbers on hexagons" keeps the
-    numbers visible.
-  - `/` jumps to the search of the table on screen.
-  - `Alt ←` / `Alt →` step back and forward in Create / update (see "Write flow" below).
-- **Back** (`‹` next to the logo) does the same as `Esc`: tool → area → all areas → module page. Its tooltip says where it goes.
-- **Appearance** (sliders icon in the top bar, on the sign-in card, and in the user menu): theme and motion, saved in
-  this browser.
+  module page), `Ctrl K` searches. `Alt ←` / `Alt →` step back and forward in Create / update (see "Write flow" below).
+- **Appearance** (sliders icon in the top bar and on the sign-in card): theme and motion, saved in this browser.
+  - **Look (v3.11 "Hive"):** light is white and warm grey; dark is warm graphite. Surfaces are flat with 1px lines,
+    3px controls and 4px panels. The primary button is ink-coloured (dark on light, cream on dark). Honey marks where
+    you are and what is selected. Tables are flat, fields have a bottom line, and status badges are outlined.
   - **Theme:** System (follows Windows / macOS; the default for browsers without a saved choice), Light or Dark. A theme
     chosen in an earlier version is kept.
   - **Motion:** **Full** — cells flow on a spring and briefly merge while they move, hexagons lift and tilt slightly under
@@ -78,17 +82,15 @@ session; clicking the bookmark again in that session goes straight back to your 
     hexagon ("Lightbox"); it never follows the pointer.
   - When Windows / macOS is set to **reduce motion**, APIary uses Off. Choosing Full or Calm then asks for confirmation
     first; **Follow system again** hands control back to the system setting.
-- **Screen sizes:** at 1180px and wider the left pane shows the module, search, recent tools, area details on hover and
-  the Home → area → tool trail. From 761 to 1179px it becomes a narrow rail (search, recent, arrange; the trail as
-  icons with names as tooltips; area details as a tooltip). At 760px and below the pane is hidden: the workspace uses
-  the full width, the top bar shows the current place only, the Back button walks back, and the views move into the
-  user menu. Below 480px the module switch and Appearance are reached from the hub and the user menu.
-- **Views** (top right of the honeycomb, next to Arrange): Honeycomb (default), Gallery, Cards, List. The last one you pick is remembered in this browser.
-- **Search** (`Ctrl K` or the search field in the top bar): tools, areas and actions (Appearance, theme, views, Arrange,
+- **Layout:** the left pane is 320px wide at every window size: the module, search, recent tools and last runs; the
+  Home → area → tool trail inside a tool. Pointing at an area shows its tools in a card next to it. Windows narrower
+  than 980px scroll sideways, so every top-bar button stays reachable.
+- **Views** (top bar): Honeycomb (default), Gallery, Cards, List. The last one you pick is remembered in this browser.
+- **Search** (`Ctrl K` or the search icon in the top bar): tools, areas and actions (Appearance, theme, views, Arrange,
   sign out …). Words match the start of words ("acc pol"); short queries also match initials ("tu" → Timecard Update).
   `Tab` on an area searches inside it; `Ctrl Enter` opens the actions of the selected row. Admins also find API endpoints
   (copy the path, show cURL, open the Developer panel) — nothing is sent from the search.
-- **Tables:** click a column title to sort, **Columns** hides columns (only on screen), `/` searches, and the `⋯` on a
+- **Tables:** click a column title to sort, **Columns** hides columns (only on screen), the search box filters rows, and the `⋯` on a
   row copies its id or shows it as JSON. Flags show as Yes / No; files keep TRUE / FALSE.
 
 ## Write flow (Create / update)
@@ -110,6 +112,60 @@ step back and forward.
     keeps its Excel-only template, which formats the id columns as text).
     Reference sheets stay in the Excel version. CSV files are UTF-8; Excel may drop leading zeros from codes when it
     opens a CSV directly (use Data → From Text, or keep the Excel file).
+
+## Undo, run journal, Compare, Playbooks (v3.13)
+
+- **Undo this run** (on the Report, and in the run journal) for Paycodes, Accrual and Combinations:
+  - **Download undo file:** the old values of every updated record, in the tool's own upload format. A field that
+    was empty before is written as CLEAR. Upload it in the same tool: you see the normal review, and nothing is sent
+    before Apply.
+  - **Delete N created records…:** removes the records the run created. It asks first, and only works while you are
+    signed in to the same environment.
+  - Other tools keep their Report and error files; they have no undo yet.
+- **Run journal** (user menu, or search "journal"): every Apply and Delete from this browser on this site.
+  - **What it keeps:** tool, environment, user, file name and SHA-256, every item with its result, and every request
+    with its response (bodies shortened; the token is never recorded).
+  - **What you can do:** search it, open the details, download one run (Excel or JSON) or all of them (JSON), and get
+    its undo file.
+  - **Where it lives:** the newest 300 runs, in this browser only (IndexedDB). The Production and UAT sites keep
+    separate journals.
+- **Compare** (a tab in Paycodes, Accrual and Combinations): reads the current environment and the other one, and
+  lists what is only in one, what differs and what is the same.
+  - **The second sign-in:** read-only, kept only while APIary is open, never saved. While the other environment is
+    being read, any write is refused. Your main sign-in does not change.
+  - **How records match:** by code (paycodes), by name (accruals), and by first + second paycode code
+    (combinations). Ids are translated, because they differ between environments.
+  - **Review copying N into <this environment>:** puts the ticked rows into Create / update with the normal review.
+  - **Download:** the comparison, or an upload file for either environment.
+- **Playbooks** (Automation → Playbooks): one workbook, one sheet per tool, named after the tool and in its own upload
+  format.
+  - **Check:** every sheet is checked against Beeforce first. An error that names something an earlier sheet creates
+    is shown as "waiting" and checked again after that sheet has run.
+  - **Run:** sheets run left to right with each tool's own requests, stopping at the first sheet with errors or failed
+    rows. Every sheet is recorded in the run journal, with undo data where the tool supports it.
+  - **Template:** "Download playbook template" builds a workbook from the tools you pick.
+
+## Column mapping, Health check, Tools by role (v3.14)
+
+- **Map columns…** (on the review of any tool with a template): when a customer's file uses its own column names,
+  match them once to the tool's columns.
+  - **Remembered:** APIary remembers the mapping for that tool in this browser and applies it to the next file with
+    the same column names. The review says which columns were renamed; "Edit mapping" or "Forget the mapping" changes
+    it.
+  - **Checks unchanged:** the tool's own checks run on the renamed columns as usual.
+- **Health check** (Automation → Health Check): reads paycodes, events, event sets, combinations, shift templates,
+  sets and patterns, accruals and their policies, time off and outpass policies, and reports:
+  - **Problems:** references to things that do not exist, and duplicate codes or names.
+  - **Warnings:** inactive paycodes that are still used.
+  - **Info:** things nothing uses.
+  - It is read only, and the findings download as Excel. Lists it cannot read are listed and skipped.
+- **Tools by role** (Admin Settings → Tools by role): give each role its tools, and say which Beeforce username has
+  which role ("*" = everyone else).
+  - **What people see:** colleagues with a role see only that role's tools (and the areas that have them). People
+    without a role see everything, and so do unlocked admins.
+  - **Try it first:** "Preview as" shows the honeycomb as a role sees it.
+  - **To publish:** "Download layout.json" adds the roles to the team layout. Commit it next to `index.js`.
+  - **Not a lock:** this only changes what APIary shows. What an account may change is still decided by Beeforce.
 
 ## Admin console (Settings)
 
@@ -149,7 +205,6 @@ the screens but is not server-grade security; the real lock is who can commit to
 - **Layout** — modules (add, rename, hide, order; a module with no areas shows as "Coming soon"), then per module: rename, reorder, hide or move areas and tools,
   add areas, move areas between modules. Collapsible list with search. Limits: 8 areas per module, 6 tools per area.
   "Save to this browser" changes only your browser. "Export layout.json" gives a file for the whole team.
-  A save bar stays at the top while there are unsaved changes, and a preview shows the module's areas as they will appear.
 - **Sign-in & audit** — client id/secret and audit webhook for this browser; status: configured / not configured / needs attention.
 - **API explorer** — see above: test, edit, turn off and download any endpoint; send a GET to any Beeforce path.
 - **API endpoints** — every Beeforce call the tools make (method + path), editable as a table. "Import Postman collection" (v2.1)

@@ -90,9 +90,9 @@ var ICONS = {
   move: '<path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/>',
   copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5"/>',
   unlock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 6.8-1.2"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
   dots: '<circle cx="5.5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18.5" cy="12" r="1.3"/>',
   columns: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15M14.5 4.5v15"/>',
-  keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>'
 };
 function icon(name, size) {
@@ -133,10 +133,6 @@ function motionFollow() { return pref('motionFollow', true, function (v) { retur
 /* The motion level in effect: full | calm | off. */
 function motion() { return motionFollow() && osReducedMotion() ? 'off' : motionChoice(); }
 function reducedMotion() { return motion() === 'off'; }
-/* Area number shortcuts (v3.8): keys 1–8 open areas on the home honeycomb (bft.areaKeys, default on); the numbers
- * show on the hexagons on hover, or always with bft.areaKeyBadges (default off). */
-function areaKeys() { return pref('areaKeys', true, function (v) { return typeof v === 'boolean'; }); }
-function areaKeyBadges() { return pref('areaKeyBadges', false, function (v) { return typeof v === 'boolean'; }); }
 /* Save a motion choice. follow=false only after the user confirmed overriding the system setting. Returns saved? */
 function setMotion(choice, follow) {
   if (MOTIONS.indexOf(choice) < 0) return false;
@@ -145,5 +141,4 @@ function setMotion(choice, follow) {
 }
 
 ctx.U = { h: h, append: append, clear: clear, swap: swap, icon: icon, ICONS: ICONS, sleep: sleep, stamp: stamp, timeNow: timeNow, pad: pad, reducedMotion: reducedMotion, store: store,
-  THEMES: THEMES, MOTIONS: MOTIONS, setPref: setPref, osReducedMotion: osReducedMotion, themeChoice: themeChoice, motionChoice: motionChoice, motionFollow: motionFollow, motion: motion, setMotion: setMotion,
-  areaKeys: areaKeys, areaKeyBadges: areaKeyBadges };
+  THEMES: THEMES, MOTIONS: MOTIONS, setPref: setPref, osReducedMotion: osReducedMotion, themeChoice: themeChoice, motionChoice: motionChoice, motionFollow: motionFollow, motion: motion, setMotion: setMotion };

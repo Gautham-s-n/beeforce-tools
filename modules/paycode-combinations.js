@@ -55,6 +55,27 @@ ctx.defineTool('paycode-combinations', {
       create: function (p) { return ctx.EP.call('paycode-combinations.create', null, { body: p, module: MOD }); },
       update: function (id, p) { return ctx.EP.call('paycode-combinations.update', { id: id }, { body: p, module: MOD }); },
       remove: function (id) { return ctx.EP.call('paycode-combinations.remove', { id: id }, { module: MOD }); },
+      removeEp: 'paycode-combinations.remove',
+      // Compare with the other environment: paycodes are matched by code; a combination by its first + second paycode
+      compare: {
+        keyLabel: 'First + second paycode', headers: HEAD, fields: ['combinedPaycode', 'inactive'],
+        load: async function () {
+          var res = await Promise.all([ctx.EP.listQuiet('paycode-combinations.paycodes', null, { module: MOD }), ctx.EP.list('paycode-combinations.list', null, { module: MOD })]);
+          var code = {}, byCode = {};
+          res[0].forEach(function (p) { code[String(p.id)] = p.code || ''; if (p.code) byCode[String(p.code).toLowerCase()] = p.id; });
+          var c = function (o) { return o && o.id != null ? (code[String(o.id)] || '#' + o.id) : ''; };
+          return { pcByCode: byCode, rows: res[1].map(function (x) { return { id: x.id, firstPaycode: c(x.firstPaycode), secondPaycode: c(x.secondPaycode), combinedPaycode: c(x.combinedPaycode), inactive: x.inactive ? 'TRUE' : 'FALSE' }; }) };
+        },
+        keyOf: function (r) { return r.firstPaycode + ' + ' + r.secondPaycode; },
+        toUpload: function (s, tgt) {
+          var row = { inactive: s.inactive }, miss = [];
+          PC.forEach(function (k) { var id = tgt.pcByCode[String(s[k]).toLowerCase()]; if (id == null) miss.push(s[k]); row[k] = id == null ? '' : id; });
+          if (miss.length) return { error: 'paycode ' + miss.join(', ') + ' is not there yet (copy the paycodes first)' };
+          var t = tgt.byKey[(s.firstPaycode + ' + ' + s.secondPaycode).toLowerCase()];
+          row.id = t ? t.id : '';
+          return { row: row };
+        }
+      },
       refs: async function () {
         var list = await ctx.EP.listQuiet('paycode-combinations.paycodes', null, { module: MOD });
         var byId = {}; list.forEach(function (p) { byId[String(p.id)] = p; });

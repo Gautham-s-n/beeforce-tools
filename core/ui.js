@@ -280,7 +280,6 @@ function table(cols, rows, o) {
     search = input({ placeholder: 'Search rows' });
     search.classList.add('tsearch');
     search.setAttribute('aria-label', 'Search rows');
-    search.setAttribute('aria-keyshortcuts', '/');
     var tm;
     search.addEventListener('input', function () { clearTimeout(tm); tm = setTimeout(function () { q = search.value.trim(); draw(); }, 120); });
   }

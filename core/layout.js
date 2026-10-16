@@ -171,6 +171,25 @@ function unplaced(model) {
 // Admin = admin console login, or an admin unlocked inside a Beeforce session (core/secrets.js AdminLogin).
 function isAdmin() { return !!(ctx.adminConsole || ctx.adminUnlocked); }
 
+/* Tools by role (v3.14), from the team file only (layout.json "access"; this browser's layout cannot change it):
+ *   "access": { "roles": { "support": ["punch", "tasks", …] },          role → the tools it shows
+ *               "users": { "ops.user": "support", "*": "support" } }    Beeforce username → role ("*" = everyone else)
+ * A user with a role sees only that role's tools; a user without a role sees every tool. Unlocked admins see every
+ * tool. This only changes what APIary shows: what an account may change is still decided by Beeforce. */
+function cleanAccess(a) {
+  if (!a || typeof a !== 'object' || !a.roles || typeof a.roles !== 'object') return null;
+  var roles = {}, users = {};
+  Object.keys(a.roles).forEach(function (r) { if (/^[\w .-]{1,40}$/.test(r) && Array.isArray(a.roles[r])) roles[r] = a.roles[r].filter(function (t) { return typeof t === 'string' && known(t); }); });
+  Object.keys(a.users || {}).forEach(function (u) { var r = a.users[u]; if (typeof r === 'string' && roles[r]) users[String(u).trim().toLowerCase()] = r; });
+  return Object.keys(roles).length ? { roles: roles, users: users } : null;
+}
+function access() { return cleanAccess(ctx.Layout && ctx.Layout.draftAccess !== undefined ? ctx.Layout.draftAccess : ctx.repoLayout && ctx.repoLayout.access); }
+function roleOf(user) {
+  var a = access(); if (!a) return null;
+  var u = String(user || '').trim().toLowerCase();
+  return a.users[u] || a.users['*'] || null;
+}
+
 /* Builds ctx.MODULES / ctx.AREAS / ctx.TOOLS for the shell.
  * MODULES: visible modules that have at least one visible area. AREAS: visible areas of those modules, each with
  * `module`, `tools` (visible) and `allTools` (incl. hidden — reachable from Ctrl+K for admins). */
@@ -180,11 +199,17 @@ function build() {
   if (problems.length) { console.warn('[APIary] layout problems, using team layout instead:', problems); m = base(); if (validate(m).length) m = defaultsModel(); }
   var TOOLS = {};
   Object.keys(m.tools).forEach(function (id) { TOOLS[id] = { name: m.tools[id].name, hint: m.tools[id].hint, hidden: !!m.tools[id].hidden, icon: (ctx.DEFAULT_TOOLS[id] || {}).icon }; });
+  // tools by role: hide the tools the user's role does not list (admins see everything; an admin can preview a role)
+  var role = ctx.Layout && ctx.Layout.previewRole ? ctx.Layout.previewRole : (!isAdmin() ? roleOf(ctx.Api && ctx.Api.state && ctx.Api.state.user) : null);
+  var acc = role ? access() : null;
+  if (acc && acc.roles[role]) Object.keys(TOOLS).forEach(function (id) { if (acc.roles[role].indexOf(id) < 0) TOOLS[id].hidden = true; });
+  else role = null;
   var visMods = m.modules.filter(function (x) { return !x.hidden; }).map(function (x) { return x.id; });
   var AREAS = [];
   var count = {};
   m.areas.forEach(function (a) {
     if (a.hidden || visMods.indexOf(a.module) < 0) return;
+    if (role && !a.tools.some(function (t) { return !TOOLS[t].hidden; })) return;   // a role shows only areas it has tools in
     count[a.module] = (count[a.module] || 0) + 1;
     if (count[a.module] > MAX_AREAS) return;
     AREAS.push({ id: a.id, module: a.module, name: a.name, icon: a.icon, desc: a.desc, tools: a.tools.filter(function (t) { return !TOOLS[t].hidden; }), allTools: a.tools.slice(),
@@ -208,7 +233,8 @@ function build() {
     AREAS.push(settings);
   }
   ctx.MODULES = MODULES; ctx.MODULE_LIST = MODULE_LIST; ctx.AREAS = AREAS; ctx.TOOLS = TOOLS;
-  return { modules: MODULES, areas: AREAS, tools: TOOLS, admin: isAdmin() };
+  ctx.ROLE = role;
+  return { modules: MODULES, areas: AREAS, tools: TOOLS, admin: isAdmin(), role: role };
 }
 
 ctx.Layout = {
@@ -226,6 +252,9 @@ ctx.Layout = {
     return [];
   },
   clearLocal: function () { try { localStorage.removeItem(LKEY); } catch (e) {} },
-  exportRepo: function (model) { return diff(defaultsModel(), model); }  // layout.json for the team
+  // layout.json for the team (keeps the team's tools-by-role section, or the one being edited)
+  exportRepo: function (model) { var d = diff(defaultsModel(), model), a = access(); if (a) d.access = a; return d; },
+  access: access, cleanAccess: cleanAccess, roleOf: roleOf,
+  draftAccess: undefined, previewRole: null
 };
 build();

@@ -126,16 +126,7 @@ function layoutTab(el) {
   }
 
   var checkBox = h('div');
-  var saveBtn, discardBtn, barState, barEl, previewEl;
-  /* v3.9: a preview of the module's areas as they will show (hidden ones dimmed, order as listed). */
-  function drawPreview() {
-    var list = model.areas.filter(function (a) { return a.module === curMod; });
-    U.swap(previewEl, list.length ? list.map(function (a) {
-      var nTools = a.tools.filter(function (t) { return model.tools[t] && !model.tools[t].hidden; }).length;
-      return h('div.pvhex' + (a.hidden || !nTools ? '.off' : ''), { title: (a.name || '(no name)') + (a.hidden ? ' · hidden' : !nTools ? ' · no visible tools, not shown' : ' · ' + nTools + ' tool' + (nTools === 1 ? '' : 's')) },
-        h('span', U.icon(a.icon, 16), h('b', a.name || '(no name)'), h('em', a.hidden ? 'hidden' : nTools + ' tool' + (nTools === 1 ? '' : 's'))));
-    }) : h('span.small.dim', 'No areas in this module yet.'));
-  }
+  var saveBtn, discardBtn;
   function check() {
     var errs = L.validate(model);
     U.swap(checkBox, errs.length
@@ -143,8 +134,6 @@ function layoutTab(el) {
       : h('div.note.ok', h('div', h('b', dirty() ? 'Ready to save' : 'No unsaved changes'), dirty() ? 'Saving updates the honeycomb in this browser right away.' : null)));
     if (saveBtn) saveBtn.disabled = !!errs.length || !dirty();
     if (discardBtn) discardBtn.disabled = !dirty();
-    if (barState) { barState.textContent = errs.length ? 'Fix ' + errs.length + ' problem' + (errs.length > 1 ? 's' : '') + ' to save' : dirty() ? 'Unsaved changes' : 'All changes saved'; barEl.classList.toggle('dirty', dirty()); }
-    if (previewEl) drawPreview();
     return errs;
   }
 
@@ -163,9 +152,8 @@ function layoutTab(el) {
           UI.btn('Reset this browser', { sm: true, icon: 'retry', kind: 'quiet', onClick: resetLocal }),
           importInput)),
       checkBox,
-      barEl = h('div.savebar', { role: 'region', 'aria-label': 'Save' }, barState = h('span.sbstate', { role: 'status' }), h('span', { style: { flex: 1 } }), discardBtn, saveBtn),
+      h('div.row', { style: { margin: '6px 0 14px' } }, saveBtn, discardBtn),
       modulesCard(),
-      h('div.pvwrap', h('div.small.dim', { style: { marginBottom: '6px' } }, 'Preview · ' + modName(curMod) + ' (order as listed below)'), previewEl = h('div.preview', { 'aria-label': 'Preview of the areas' })),
       h('div.row', { style: { margin: '14px 0 10px', alignItems: 'center' } }, h('h3.secttl', 'Areas in ' + modName(curMod)), h('span', { style: { flex: 1 } }),
         UI.btn('Add area', { icon: 'list', sm: true, onClick: addArea })),
       h('div.row', { style: { margin: '0 0 10px', alignItems: 'center' } }, searchBox(),
@@ -352,17 +340,7 @@ ctx.addCSS('admin-settings', [
   '.trow .cbx{display:grid;place-items:center}.trow .cbx input{width:16px;height:16px;accent-color:var(--blue2)}',
   '.updn{display:inline-flex;gap:2px}.updn .iconbtn{width:28px;height:28px}.updn .iconbtn[disabled]{opacity:.3;cursor:default}',
   '@media (max-width:1100px){.trow{grid-template-columns:28px 1fr 1fr;}.trow code,.trow.thead span:nth-child(4){display:none}}',
-  '.badtxt{color:var(--bad)}',
-  /* v3.9: sticky save bar + area preview */
-  '.savebar{position:sticky;top:-28px;z-index:3;display:flex;align-items:center;gap:8px;margin:6px 0 14px;padding:8px 10px 8px 14px;border:1px solid var(--line);border-radius:var(--r12);background:var(--panel)}',
-  '.savebar.dirty{border-color:var(--honeyedge);background:var(--honeybg)}',
-  '.sbstate{font-weight:600;font-size:13px}.savebar.dirty .sbstate{color:var(--honey)}',
-  '.pvwrap{margin-top:14px}',
-  '.preview{display:flex;flex-wrap:wrap;gap:6px}',
-  '.pvhex{width:104px;height:116px;clip-path:var(--hex);background:var(--line2);padding:1.5px;flex:none}',
-  '.pvhex>span{width:100%;height:100%;clip-path:var(--hex);background:var(--areaface);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-align:center;padding:0 12px;color:var(--blue3)}',
-  '.pvhex b{font-size:11.5px;line-height:1.2;color:var(--ink);font-weight:600}.pvhex em{font-style:normal;font-size:10.5px;color:var(--ink3)}',
-  '.pvhex.off{opacity:.45}'
+  '.badtxt{color:var(--bad)}'
 ].join('\n'));
 
 /* ======================= API endpoints (registry + Postman importer) ======================= */

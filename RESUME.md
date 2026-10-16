@@ -156,6 +156,98 @@
 - Tests: t_steps.py (pause → back → applied never re-sent, each POST once, report / error files Excel + CSV, error file
   and CSV export re-upload), t_v39.py; t_api.py selectors follow the split view (helper C()).
 
+## v3.10.0 (2026-10-15) — v3.6.1 look and layout with the chosen Stage 3–4 features
+User kept: Appearance dialog, three motion levels, reduced motion, search (Ctrl K), dialogs, code dialog, menus,
+tables, toasts, write flow, error files, CSV next to Excel, API explorer, Developer panel, run panel; plus the
+accessibility fixes (focus rings, contrast ≥ 4.5:1, hidden panes out of the Tab order). Everything else went back to
+v3.6.1 ("I especially hated how the three buttons — Arrange, etc. — were displayed in the left nav bar").
+- Narrow windows: .top / .body min-width 980px and .app scrolls sideways (v3.6.1 cut the right side off); .app::before,
+  .scrim and .toasts are position:fixed so they stay on screen while scrolled.
+- core/styles.js = v3.6.1 styles + v3.7 motion block (calm / off) + a11y tokens (--focusring, --fieldline, --ink3,
+  light --honey) + compatibility tokens for the kept components (--r*, --t*, --mono, --settle).
+- core/shell.js: fixed 320px side pane at every width (SIDE, TRAIL = v3.6.1 trail geometry), no data-vp / rail /
+  top-bar Back / combar / search field / window-controls group; v3.6.1 top bar (views, env, user, Search, Appearance,
+  Arrange, Minimize, Close) and floating area peek; user menu = Unlock / Lock admin, Sign out (UI.menu). Removed:
+  number keys 1–8 and badges, `?` shortcuts dialog, `/` table search key, Caps Lock hint, eye state label,
+  Appearance keyboard section, v3.8 look CSS (radii, control heights, honey tabs / selection). Kept the v3.7 motion
+  code, Appearance, palette rewrite, menus / dialogs / tables / write-flow CSS (palette and menus in v3.6.1 blue).
+- core/util.js: areaKeys / areaKeyBadges and the keyboard icon removed (old bft.areaKeys values are ignored).
+- core/ui.js: no aria-keyshortcuts="/" on table search. modules/admin-settings.js back to v3.7.0 (no save bar /
+  preview). engine, excel, dev-panel and the 7 tool modules unchanged from v3.9.0.
+- Tests: t_v310.py (layout, removed keys, palette, menus, dialogs, tables, explorer, Developer panel); t_a11y.py
+  without the Back button (Esc instead); t_appearance.py without data-vp; t_responsive, t_v38, t_v39 retired.
+
+## v3.11.0 (2026-10-16) — "Hive" theme (feedback: the dark mode looked AI-generated)
+- The user compared 4 directions rendered on the real screens: IBM Carbon, GitHub Primer, warm workshop, and Atlassian
+  light. They chose warm workshop for dark and the Atlassian structure, warm-tuned, for light, borrowing Carbon's flat
+  tables and square fields and Primer's outlined badges.
+- core/styles.js: a "Hive" block at the end, with tokens for both themes and component rules:
+  - flat background (no radial glow), no top accent line, no blur;
+  - 3px controls / 4px containers;
+  - primary button = ink (--blue now means "ink action"; --blue2 = honey selection / focus);
+  - fields with only a bottom line and an inset focus outline;
+  - flat tables (filled header, row lines), outlined chips (color-mix border);
+  - neutral done-steps (honey = current);
+  - flat 4px progress bar;
+  - a warm, faint backlight;
+  - hexagon faces flat (the hub keeps its honey gradient).
+- core/shell.js: a small block for the shell's own corners (menus, view switch, gallery tiles, arrange bar, dock label).
+- No layout, behaviour, API or configuration changes. The theme default is still System.
+- Tests: t_contrast treats transparent surfaces as the panel under them; t_v310 accepts 3.11.0.
+
+## v3.12.0 (2026-10-16) — saved passwords on the sign-in card
+- User's goal for the product: bulk actions / updates in Beeforce and quick data and endpoint extraction; circulated
+  to colleagues, admin access stays with the user. They asked for credentials to be fetched automatically; they chose
+  the browser-saved password (not reusing the Beeforce tab's session), and decided colleagues should get read-only
+  exports (next feature).
+- core/shell.js: `Saved` uses the Credential Management API (`navigator.credentials.get({password:true})`,
+  `mediation:'optional'` when the card opens, `'required'` from the "Use a saved password" link).
+  - It fills the card only: no auto sign-in, and it never overwrites typed values.
+  - When nothing comes back, `sessionStorage bft.pwAsked` stops further asks in that tab.
+  - After a successful Beeforce sign-in, `navigator.credentials.store(new PasswordCredential)` runs, except when the
+    page belongs to the other environment.
+  - Never for the admin console.
+  - The sign-in API is unchanged.
+- Test: t_savedpw.py (Credential API stubbed; headless Chromium has no password manager).
+
+## v3.13.0 (2026-10-16) — roadmap stage 1: undo, run journal, Compare, Playbooks
+- The user asked to implement the roadmap in stages with as few sessions as possible. Stage 1 = Tier 1 (undo, Compare,
+  run journal) + Playbooks with cross-sheet checks. The two-environment sign-in for Compare was approved together with
+  the roadmap.
+- core/engine.js:
+  - **Journal:** IndexedDB `apiary`/`runs`, keeps 300. `recordCalls` wraps `Api.call` during a run; `saveRun`;
+    `runAndRecord(panel, todo, cfg, meta)` replaces `runQueue` in `stepApply`, `runDeletes` and Playbooks.
+  - **Undo:** `undoOf`, `undoFile`, `deleteCreated`. Items carry `before` + `undoCols`; the flow carries
+    `cfg.removeEp`.
+  - **Upload flow:** `el.loadData(rd, name)`; `capture()` / `captureSheets()` for Playbooks.
+  - **Compare:** `compareTab()`, `signInOther()`, `withOther()`. The second session lives in memory only; non-GET
+    calls are refused while it is active. The sign-in uses `Api.signIn`, then the main state and sessionStorage are
+    restored.
+  - **Journal screen:** `openJournal()`, `runDetails`, Excel / JSON export.
+- **Tools:**
+  - `entity()`: `it.before` / `it.undoCols`, `cfg.removeEp`, `cfg.compare` → Compare tab.
+  - paycodes.js: undo data, removeEp, Compare (`compareLoad` / `compareRow`, the linked paycode as a code).
+  - accrual.js and paycode-combinations.js: removeEp + compare config.
+  - modules/playbooks.js: new tool in Automation (index.js).
+- **shell.js:** "Run journal" in the user menu and in search; the reauth prompt is named (`ctx.Shell.reauth`) so
+  Compare can restore it.
+- **Test:** t_v313.py (two mocks: Production seed.json, UAT seed_uat.json).
+
+## v3.14.0 (2026-10-16) — roadmap stage 2: column mapping, Health check, Tools by role
+- **engine.js:** `applyMap` / `savedMap` / `saveMap` (`localStorage bft.colmap`, keyed by tool, normalized file
+  header → template header). `loadData` keeps the raw file and applies the map. `mapDialog` reads the tool's template
+  headers with `captureSheets`.
+- **modules/health.js** (new tool, Automation): GET-only lists via existing endpoint keys; checks broken references,
+  duplicates, inactive-but-used paycodes and unused setup.
+- **layout.js:** `access` in the team file only (`cleanAccess` / `access` / `roleOf`). `build()` hides tools outside
+  the user's role and drops areas left empty. Admins are exempt; `previewRole` / `draftAccess` serve the admin
+  preview. `exportRepo` keeps `access`.
+- **shell.js:** Admin Settings tab "Tools by role" via `ctx.ADMIN_TABS`, so admin-settings.js is unchanged.
+- **util.js:** `plus` icon.
+- **Not done:** the tool generator (Tier 3 #8). API Automation already runs any endpoint from a sheet; a generator
+  needs per-endpoint field metadata that the registry doesn't have.
+- **Test:** t_v314.py.
+
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).
 - Workflow transfer: "replace" column now really sent (old always sent false because of a header typo).

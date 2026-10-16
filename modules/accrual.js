@@ -24,6 +24,14 @@ ctx.defineTool('accrual', {
       create: function (p) { return ctx.EP.call('accrual.create', null, { body: p, module: MOD }); },
       update: function (id, p) { return ctx.EP.call('accrual.update', { id: id }, { body: p, module: MOD }); },
       remove: function (id) { return ctx.EP.call('accrual.remove', { id: id }, { module: MOD }); },
+      removeEp: 'accrual.remove',
+      // Compare with the other environment: accruals match by name (ids differ between environments)
+      compare: {
+        keyLabel: 'Name', headers: ['id', 'name', 'description'],
+        load: async function () { var l = await ctx.EP.list('accrual.list', null, { module: MOD }); return { rows: l.map(function (a) { return { id: a.id, name: a.name || '', description: a.description || '' }; }) }; },
+        keyOf: function (r) { return r.name; },
+        toUpload: function (s, tgt) { var t = tgt.byKey[X.str(s.name).toLowerCase()]; return { row: { id: t ? t.id : '', name: s.name, description: s.description } }; }
+      },
       browse: [{ key: 'name', label: 'Name' }, { key: 'description', label: 'Description' }],
       intro: 'Leave the id blank to create a new accrual. Fill the id to update an existing one. “name” is required. Tip: use “Export for editing” in Browse to get current data in this format.'
     });

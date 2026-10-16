@@ -136,7 +136,7 @@ async function parse(file) {
         it.changes = asked.concat(realChanges(cur, p, seen));
         if (!it.changes.length) { it.kind = 'same'; return it; }
         if (!p.code) { it.kind = 'bad'; it.error = '“code” is required'; return it; }
-        it.kind = 'upd'; it.payload = p;
+        it.kind = 'upd'; it.payload = p; it.before = before; it.undoCols = H;
         it.run = function () { return ctx.EP.call('paycodes.update', { id: id }, { body: p, module: MOD }); };
       } else {
         if (!Object.keys(row).some(function (k) { return X.str(row[k]) !== ''; })) { it.kind = 'skip'; it.note = 'Empty row'; return it; }
@@ -153,6 +153,28 @@ async function parse(file) {
   var seenIds = {};
   items.forEach(function (it) { if (it.ref != null && E.applicable(it)) { if (seenIds[it.ref]) { it.kind = 'bad'; it.error = 'Same id ' + it.ref + ' appears again on row ' + seenIds[it.ref]; } else seenIds[it.ref] = it.row; } });
   return items;
+}
+
+/* ---------- compare with the other environment (v3.13): paycodes match by code; the linked paycode is shown and
+ * copied by its code, because ids differ between environments ---------- */
+async function compareLoad() {
+  var res = await Promise.all([loadAttrsQuiet(), loadList()]);
+  var refs = { attrs: res[0] }, H = headers(refs), code = {};
+  res[1].forEach(function (p) { code[String(p.id)] = p.code || ''; });
+  var rows = res[1].map(function (p) { var f = flatten(p, refs); var l = f[LINK_COL]; f[LINK_COL] = l === '' || l == null ? '' : (code[String(l)] || '#' + l); return f; });
+  return { headers: H, rows: rows };
+}
+function compareRow(s, tgt) {
+  var row = Object.assign({}, s);
+  var t = tgt.byKey[X.str(s.code).toLowerCase()];
+  row[ID_COL] = t ? t[ID_COL] : '';
+  var lc = X.str(s[LINK_COL]);
+  if (lc) {
+    var lt = tgt.byKey[lc.toLowerCase()];
+    if (!lt) return { error: 'linked paycode ' + lc + ' is not there yet (copy it first)' };
+    row[LINK_COL] = lt[ID_COL];
+  }
+  return { row: row };
 }
 
 /* ---------- browse ---------- */
@@ -188,13 +210,16 @@ function browse(bodyEl) {
 ctx.defineTool('paycodes', {
   desc: 'Create and update paycodes from Excel, export them for editing, or delete the ones you no longer need.',
   render: function (view) {
-    view.appendChild(UI.tabs([
+    var flowEl = null, tabsEl;
+    view.appendChild(tabsEl = UI.tabs([
       { id: 'upload', label: 'Create / update', render: function (b) {
-        b.appendChild(E.uploadFlow({ module: MOD, template: function () { return template(false); }, parse: parse, itemLabel: 'Paycode', errorRows: true, csv: true,
+        b.appendChild(flowEl = E.uploadFlow({ module: MOD, removeEp: 'paycodes.remove', template: function () { return template(false); }, parse: parse, itemLabel: 'Paycode', errorRows: true, csv: true,
           blankNote: function () { return 'On update, columns that are missing or left blank keep their current value in ' + Api.envLabel() + ' (properties without a column are kept too). To empty a value, type CLEAR in the cell. Flags the record has no value for are sent as FALSE and day counts as 0 — the review lists them.'; },
           intro: 'Leave the id blank to create a new paycode. Fill the id to update an existing one. Attribute columns (DAY_FLAG, PAYDED_FLG …) go into the paycode’s properties. Tip: use “Export for editing” in Browse to get current data in this format.' }));
       } },
-      { id: 'browse', label: 'Browse & export', render: browse }
+      { id: 'browse', label: 'Browse & export', render: browse },
+      E.compareTab({ module: MOD, noun: 'paycode', keyLabel: 'Code', load: compareLoad, keyOf: function (r) { return r.code; }, toUpload: compareRow,
+        openUpload: function (rd, name) { tabsEl.open('upload'); if (flowEl) flowEl.loadData(rd, name); } })
     ]));
   }
 });
