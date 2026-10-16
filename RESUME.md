@@ -281,6 +281,27 @@ v3.6.1 ("I especially hated how the three buttons — Arrange, etc. — were dis
 - **Rig:** `rig.launch` sets `bft.prodGuard` off unless `BFT_PRODGUARD=on`, so the older suites click through as
   before; t_v315.py covers the guard. New: t_v315.py, mkro.py, run315.sh, runlvl314.sh, runall315.sh.
 
+## v3.16.0 (2026-10-16) — access control before sharing, lookup forms, plain errors, Light default
+- From the user's proposal list they picked P21, P19, P16, P1, P3, P18 and decided P12 = Light. P13: colleagues
+  will share one Beeforce username (e.g. LNTBTADMIN) on their own browsers; only the user has the admin login.
+  The rest of the list (P2, P4–P11, P20, P22) waits; P23 (usage log) and P24 (hosted APIary) are phase two.
+- **core/layout.js:** `cleanAccess` no longer needs roles; keeps `allowedUsers` (lower case), `approval`, `devices`
+  ({ "XXXX-XXXX": { name, user, role, at } }). `deviceId()` (localStorage `bft.device`), `deviceEntry(user)`,
+  `userAllowed(user)`, `deviceApproved(user)`. `roleOf`: an approved browser's role comes before the username's.
+- **core/shell.js:** sign-in card refuses users not in `allowedUsers` before `Api.signIn`; after sign-in an unapproved
+  browser gets `requestPanel` (request code `APIARY-REQ-` + base64url JSON {v,n,u,d,e,h,t}); the Beeforce session is
+  dropped; "I am the APIary admin" + admin password lets the admin in. `start()` re-checks a restored session.
+  `whoLabel` adds the approved name to audit messages. Admin tab **Access** (allowed accounts, approval switch,
+  paste/approve requests with a role, approved browsers with role / Remove, "Approve this browser", download).
+  Tools by role: folding cards (`.rolecard`, `.rolefold`, `.rolecount`); both tabs share one draft (`mergeDraft`).
+- **core/engine.js:** `plainError(status, text)` (used by runQueue, Developer panel, Data Export, lookups);
+  `LOOKUPS` (timecards, accrual balances, employee by number), `lookupFields`, `lookupQuery` (employee number → id
+  for balances), `employeeId`; journal records `device` and `person`. Compare's second sign-in follows the list.
+- **core/util.js:** theme default Light. **modules/dev-panel.js:** lookup fields, URL preview + cURL follow them,
+  async request builder, plain error line. **modules/data-export.js:** "Look up one employee" card.
+- **README:** v3.16 section and "Share APIary with a colleague" (bookmark name `⬢ APIary`).
+- **Rig:** t_v316.py (+ run316.sh, seed_v316.json, runall316.sh).
+
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).
 - Workflow transfer: "replace" column now really sent (old always sent false because of a header typo).

@@ -645,10 +645,22 @@ function showLogin(msg, forceSetup) {
         return;
       }
       var su = user.value.trim(), sp = pass.value;
+      // v3.16 allowed accounts: refused here, before anything is sent to Beeforce
+      if (!ctx.Layout.userAllowed(su)) throw new Error('This account is not allowed in APIary. Ask the APIary admin.');
       await Api.signIn(env, su, sp);
       Saved.store(env, su, sp); sp = null;
       U.store.set('env', env); U.store.set('user', su);
-      ctx.Audit.startSession(user.value.trim(), Api.envLabel());
+      // v3.16 browser approval: an unapproved browser gets a request code instead of the tools
+      if (!ctx.Layout.deviceApproved(su)) {
+        var pend = Object.assign({}, Api.state);
+        Api.signOut(); pass.value = '';
+        go.disabled = false; U.swap(go, h('span', 'Sign in'));
+        card.classList.add('wide');
+        U.swap(card, requestPanel({ user: su, env: env, pending: pend, onBack: backToLogin }));
+        restart(card);
+        return;
+      }
+      ctx.Audit.startSession(whoLabel(su), Api.envLabel());
       leaveLogin();
     } catch (ex) {
       U.swap(err, ex.message);
@@ -682,6 +694,48 @@ function showLogin(msg, forceSetup) {
   }
 }
 function restart(el) { el.style.animation = 'none'; void el.offsetWidth; el.style.animation = ''; }
+
+/* v3.16: the name of this browser's approval (if any) next to the username, so colleagues sharing one Beeforce
+ * username can be told apart in the audit messages and the run journal. */
+function whoLabel(u) { var d = ctx.Layout.deviceEntry(u); return u + (d && d.name ? ' · ' + d.name : ''); }
+
+/* Access request (v3.16, layout.json access.approval): this browser is not approved for this username. The person
+ * types their name and sends the request code to the APIary admin, who approves it in Admin Settings → Access and
+ * commits layout.json. The Beeforce session is not kept. The admin can pass with the admin password. */
+function requestCode(o) {
+  var json = JSON.stringify({ v: 1, n: o.name, u: String(o.user).toLowerCase(), d: ctx.Layout.deviceId(), e: o.env, h: location.host, t: new Date().toISOString().slice(0, 10) });
+  return 'APIARY-REQ-' + btoa(unescape(encodeURIComponent(json))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function requestPanel(o) {
+  var name = UI.input({ placeholder: 'Your name' }); name.autocomplete = 'name';
+  var code = UI.textarea({ value: '' }); code.readOnly = true; code.rows = 3; code.classList.add('mono', 'reqcode');
+  var copyBtn = UI.btn('Copy request code', { kind: 'primary', icon: 'copy', onClick: function () { if (!name.value.trim()) { UI.toast('Type your name first.', 'bad'); name.focus(); return; } return UI.copy(code.value, 'Request code'); } });
+  function upd() { code.value = name.value.trim() ? requestCode({ name: name.value.trim().slice(0, 60), user: o.user, env: o.env }) : ''; copyBtn.disabled = !name.value.trim(); }
+  name.addEventListener('input', upd); upd();
+  var adminErr = h('div.err');
+  var adminPass = UI.input({ type: 'password', placeholder: 'Admin password' }); adminPass.autocomplete = 'current-password';
+  var adminBox = h('div.reqadmin', { hidden: true }, UI.field('Admin password', adminPass), adminErr,
+    h('div.row', UI.btn('Unlock and continue', { icon: 'unlock', onClick: async function () {
+      adminErr.textContent = '';
+      var r = await ctx.AdminLogin.check(ctx.AdminLogin.username(), adminPass.value); adminPass.value = '';
+      if (r !== 'ok') { adminErr.textContent = 'Wrong admin password.'; return; }
+      Object.assign(Api.state, o.pending);
+      try { sessionStorage.setItem('bft.session', JSON.stringify(o.pending)); sessionStorage.setItem('bft.adminUnlock', '1'); } catch (x) {}
+      ctx.adminUnlocked = true;
+      ctx.Audit.startSession(o.user + ' (admin)', Api.envLabel());
+      leaveLogin();
+    } })));
+  return h('div.reqpanel',
+    h('div.brand', h('div.mark'), 'APIary'),
+    h('h2', 'Ask for access'),
+    h('p.muted', 'This browser is not approved for ' + o.user + ' yet. Type your name, copy the request code and send it to the APIary admin. When they have approved it, sign in again.'),
+    UI.field('Your name', name),
+    UI.field('Request code', code),
+    h('div.small.muted', { style: { margin: '2px 0 10px' } }, 'This browser: ' + ctx.Layout.deviceId() + '. The code holds your name, the username, this browser’s code, the environment and today’s date — no password.'),
+    h('div.row', copyBtn, UI.btn('Back to sign-in', { kind: 'quiet', icon: 'back', onClick: o.onBack }), h('span', { style: { flex: 1 } }),
+      ctx.AdminLogin.configured() ? h('button.linkbtn', { type: 'button', onclick: function () { adminBox.hidden = !adminBox.hidden; if (!adminBox.hidden) adminPass.focus(); } }, 'I am the APIary admin') : null),
+    adminBox);
+}
 /* Signed in: the card fades out (not in Off motion), then the main shell is built. */
 function leaveLogin() {
   var off = U.reducedMotion();
@@ -2030,8 +2084,12 @@ function start() {
   document.addEventListener('keydown', onKey, true);
   window.addEventListener('resize', onResize);
   if (Api.restore()) {
-    if (!ctx.Audit.active()) ctx.Audit.startSession(Api.state.user, Api.envLabel());
     try { ctx.adminUnlocked = sessionStorage.getItem('bft.adminUnlock') === '1' && ctx.AdminLogin.configured(); } catch (x) {}
+    // v3.16: the team file may have changed since this session began (account removed, browser not approved)
+    if (!ctx.adminUnlocked && (!ctx.Layout.userAllowed(Api.state.user) || !ctx.Layout.deviceApproved(Api.state.user))) {
+      Api.signOut(); showLogin('This account or browser is not approved in APIary any more. Sign in again or ask the APIary admin.'); return;
+    }
+    if (!ctx.Audit.active()) ctx.Audit.startSession(whoLabel(Api.state.user), Api.envLabel());
     buildMain(false);
   } else showLogin();
 }
@@ -2061,6 +2119,8 @@ function rolesTab(el) {
   var L = ctx.Layout;
   var team = L.cleanAccess(ctx.repoLayout && ctx.repoLayout.access);
   var draft = L.draftAccess ? JSON.parse(JSON.stringify(L.draftAccess)) : team ? JSON.parse(JSON.stringify(team)) : { roles: {}, users: {} };
+  draft.roles = draft.roles || {}; draft.users = draft.users || {};
+  var open = {};   // v3.16: role cards fold; new roles start open
   var holder = h('div');
   el.appendChild(holder);
   var areas = (L.effective().areas || []);
@@ -2082,7 +2142,7 @@ function rolesTab(el) {
       name.addEventListener('change', function () {
         var n = name.value.trim(); if (!n || n === r) { name.value = r; return; }
         if (draft.roles[n]) { UI.toast('A role called “' + n + '” already exists.', 'bad'); name.value = r; return; }
-        draft.roles[n] = draft.roles[r]; delete draft.roles[r];
+        draft.roles[n] = draft.roles[r]; delete draft.roles[r]; open[n] = open[r];
         Object.keys(draft.users).forEach(function (u) { if (draft.users[u] === r) draft.users[u] = n; });
         if (draft.readOnly) draft.readOnly = draft.readOnly.map(function (x) { return x === r ? n : x; });
         draw();
@@ -2101,10 +2161,19 @@ function rolesTab(el) {
         if (ro.input.checked) l.push(r);
         if (l.length) draft.readOnly = l; else delete draft.readOnly;
       });
-      return h('div.card', { style: { marginBottom: '12px' } },
-        h('div.row', { style: { alignItems: 'center', marginBottom: '10px' } }, h('b', 'Role'), name, ro, h('span', { style: { flex: 1 } }),
+      var count = h('span.small.muted.rolecount');
+      function cnt() { var n = draft.roles[r] ? draft.roles[r].length : 0; count.textContent = n + ' tool' + (n === 1 ? '' : 's'); }
+      cnt();
+      groups.forEach(function (g) { g.addEventListener('change', cnt); });
+      var body = h('div.rolebody', { hidden: !open[r] }, groups);
+      var fold = h('button.iconbtn.rolefold', { type: 'button', 'aria-expanded': open[r] ? 'true' : 'false', 'aria-label': (open[r] ? 'Fold ' : 'Show the tools of ') + r, title: open[r] ? 'Fold' : 'Show tools', onclick: function () {
+        open[r] = !open[r]; body.hidden = !open[r]; fold.setAttribute('aria-expanded', String(!!open[r])); fold.title = open[r] ? 'Fold' : 'Show tools'; fold.classList.toggle('on', !!open[r]);
+      } }, U.icon('chev', 16));
+      fold.classList.toggle('on', !!open[r]);
+      return h('div.card.rolecard', { style: { marginBottom: '12px' } },
+        h('div.row', { style: { alignItems: 'center' } }, fold, h('b', 'Role'), name, ro, count, h('span', { style: { flex: 1 } }),
           UI.btn('Remove role', { sm: true, kind: 'quiet', icon: 'trash', onClick: function () { delete draft.roles[r]; Object.keys(draft.users).forEach(function (u) { if (draft.users[u] === r) delete draft.users[u]; }); if (draft.readOnly) { draft.readOnly = draft.readOnly.filter(function (x) { return x !== r; }); if (!draft.readOnly.length) delete draft.readOnly; } draw(); } })),
-        groups);
+        body);
     });
     var users = UI.textarea({ value: usersText(), placeholder: 'ops.user = support\n* = support' });
     var usersErr = h('div.err');
@@ -2115,21 +2184,129 @@ function rolesTab(el) {
       UI.note('info', 'Which tools each colleague sees', 'Give each role the tools it should show, then say which Beeforce username has which role (“*” = everyone else). People without a role see every tool; unlocked admins always see everything. ' +
         'A read-only role can open its tools, browse and export, but APIary sends no changes for it. ' +
         'This only changes what APIary does — what an account may change in Beeforce is still decided by Beeforce.'),
-      team ? null : UI.note('warn', null, 'The team layout has no roles yet: everyone sees every tool.'),
+      team && Object.keys(team.roles).length ? null : UI.note('warn', null, 'The team layout has no roles yet: everyone sees every tool.'),
       cards.length ? cards : UI.empty('No roles yet.'),
-      h('div.row', { style: { margin: '4px 0 16px' } }, UI.btn('Add role', { icon: 'plus', onClick: function () { var n = 'role ' + (Object.keys(draft.roles).length + 1); draft.roles[n] = []; draw(); } })),
+      h('div.row', { style: { margin: '4px 0 16px' } }, UI.btn('Add role', { icon: 'plus', onClick: function () { var n = 'role ' + (Object.keys(draft.roles).length + 1); draft.roles[n] = []; open[n] = true; draw(); } })),
       UI.field('Users and their roles (one per line: username = role)', users), usersErr,
       h('div.row', { style: { marginTop: '12px', alignItems: 'center' } },
         roleSel,
-        UI.btn('Preview', { icon: 'eye', onClick: function () { if (!roleSel.value) return; L.draftAccess = JSON.parse(JSON.stringify(draft)); L.previewRole = roleSel.value; relayout(); draw(); UI.toast('Showing the honeycomb as “' + roleSel.value + '” sees it. Stop the preview here.'); } }),
+        UI.btn('Preview', { icon: 'eye', onClick: function () { if (!roleSel.value) return; L.draftAccess = mergeDraft(draft); L.previewRole = roleSel.value; relayout(); draw(); UI.toast('Showing the honeycomb as “' + roleSel.value + '” sees it. Stop the preview here.'); } }),
         L.previewRole ? UI.btn('Stop preview', { kind: 'quiet', onClick: function () { L.previewRole = null; relayout(); draw(); } }) : null,
         h('span', { style: { flex: 1 } }),
         UI.btn('Download layout.json', { kind: 'primary', icon: 'download', onClick: function () {
           var x = readUsers(users.value); draft.users = x.users;
-          L.draftAccess = Object.keys(draft.roles).length ? JSON.parse(JSON.stringify(draft)) : null;
+          L.draftAccess = mergeDraft(draft);
           var data = L.exportRepo(L.effective());
           UI.saveText('layout.json', JSON.stringify(data, null, 2) + '\n', 'application/json');
           UI.toast('layout.json downloaded with the roles. Commit it next to index.js; colleagues get it the next time they open APIary.');
+        } })));
+  }
+  draw();
+}
+/* v3.16: the roles tab owns roles / users / readOnly; the Access tab owns allowedUsers / approval / devices. Each keeps
+ * the other's part of the draft, so both "Download layout.json" buttons give the same file. */
+function accessBase() {
+  var L = ctx.Layout, a = L.draftAccess !== undefined ? L.draftAccess : L.cleanAccess(ctx.repoLayout && ctx.repoLayout.access);
+  return a ? JSON.parse(JSON.stringify(a)) : {};
+}
+function mergeDraft(rolesPart) {
+  var out = accessBase();
+  out.roles = JSON.parse(JSON.stringify(rolesPart.roles || {})); out.users = JSON.parse(JSON.stringify(rolesPart.users || {}));
+  if (rolesPart.readOnly && rolesPart.readOnly.length) out.readOnly = rolesPart.readOnly.slice(); else delete out.readOnly;
+  return ctx.Layout.cleanAccess(out);
+}
+
+/* ---------------- Admin Settings → Access (v3.16) ----------------
+ * Allowed accounts: only these Beeforce usernames may sign in (exact, any case); empty = everyone.
+ * Approval: a browser must be approved before its user gets the tools. People send a request code (sign-in card);
+ * the admin pastes it here, picks a role, and commits the downloaded layout.json. Both are guard rails in APIary. */
+ctx.ADMIN_TABS.push({ id: 'access', label: 'Access', render: accessTab });
+function decodeRequest(text) {
+  var m = String(text || '').trim().match(/APIARY-REQ-([A-Za-z0-9_-]+)/);
+  if (!m) return null;
+  try {
+    var b = m[1].replace(/-/g, '+').replace(/_/g, '/'); while (b.length % 4) b += '=';
+    var o = JSON.parse(decodeURIComponent(escape(atob(b))));
+    if (!o || o.v !== 1 || typeof o.u !== 'string' || !ctx.Layout.DEVICE_RE.test(o.d || '')) return null;
+    return { name: String(o.n || '').slice(0, 60), user: o.u.trim().toLowerCase(), device: o.d, env: o.e || '', host: o.h || '', date: o.t || '' };
+  } catch (e) { return null; }
+}
+function accessTab(el) {
+  var L = ctx.Layout;
+  var a = accessBase();
+  var st = { allowedUsers: (a.allowedUsers || []).slice(), approval: !!a.approval, devices: JSON.parse(JSON.stringify(a.devices || {})) };
+  var holder = h('div');
+  el.appendChild(holder);
+  function save() {
+    var out = accessBase();
+    out.roles = out.roles || {}; out.users = out.users || {};
+    if (st.allowedUsers.length) out.allowedUsers = st.allowedUsers.slice(); else delete out.allowedUsers;
+    if (st.approval) out.approval = true; else delete out.approval;
+    if (Object.keys(st.devices).length) out.devices = JSON.parse(JSON.stringify(st.devices)); else delete out.devices;
+    L.draftAccess = L.cleanAccess(out);
+  }
+  function roles() { var r = accessBase().roles || {}; return Object.keys(r); }
+  function roleSelect(v) { return UI.select([{ value: '', label: '(by username / none)' }].concat(roles().map(function (r) { return { value: r, label: r }; })), v || ''); }
+  function draw() {
+    var allowed = UI.textarea({ value: st.allowedUsers.join('\n'), placeholder: 'LNTBTADMIN' });
+    allowed.rows = 4;
+    allowed.addEventListener('change', function () {
+      st.allowedUsers = allowed.value.split(/[\n,]+/).map(function (x) { return x.trim().toLowerCase(); }).filter(function (x, i, l) { return x && l.indexOf(x) === i; });
+      save(); draw();
+    });
+    var appr = UI.check('New browsers must be approved before they get the tools', st.approval);
+    appr.classList.add('apprcheck');
+    appr.input.addEventListener('change', function () { st.approval = appr.input.checked; save(); });
+    // paste a request
+    var paste = UI.textarea({ placeholder: 'Paste a request code: APIARY-REQ-…' }); paste.rows = 2; paste.classList.add('mono', 'reqpaste');
+    var reqOut = h('div.reqout');
+    function readReq() {
+      var r = decodeRequest(paste.value);
+      if (!paste.value.trim()) { U.swap(reqOut); return; }
+      if (!r) { U.swap(reqOut, h('div.err', 'Not a valid request code. Ask for it to be copied again.')); return; }
+      var sel = roleSelect(st.devices[r.device] && st.devices[r.device].role);
+      var notAllowed = st.allowedUsers.length && st.allowedUsers.indexOf(r.user) < 0;
+      U.swap(reqOut, h('div.card', { style: { margin: '8px 0' } },
+        UI.kv({ Name: r.name || '—', Username: r.user, Browser: r.device, Environment: r.env || '—', Site: r.host || '—', Asked: r.date || '—' }),
+        notAllowed ? UI.note('warn', null, r.user + ' is not in the allowed accounts. Approving adds it there too.') : null,
+        st.devices[r.device] ? UI.note('info', null, 'This browser is already approved (' + (st.devices[r.device].name || st.devices[r.device].user) + '). Approving again updates it.') : null,
+        h('div.row', { style: { alignItems: 'center', marginTop: '8px' } }, h('span.small', 'Role'), sel,
+          UI.btn('Approve', { kind: 'primary', icon: 'check', onClick: function () {
+            st.devices[r.device] = { name: r.name, user: r.user, role: sel.value, at: new Date().toISOString().slice(0, 10) };
+            if (st.allowedUsers.length && st.allowedUsers.indexOf(r.user) < 0) st.allowedUsers.push(r.user);
+            save(); paste.value = ''; draw();
+            UI.toast('Approved ' + (r.name || r.user) + '. Download layout.json and commit it to take effect.', 'ok');
+          } }))));
+    }
+    paste.addEventListener('input', readReq);
+    var ids = Object.keys(st.devices);
+    var tbl = ids.length ? UI.table([
+      { key: 'name', label: 'Name' }, { key: 'user', label: 'Username' }, { key: 'id', label: 'Browser' },
+      { key: 'role', label: 'Role', render: function (d) { var sel = roleSelect(d.role); sel.addEventListener('change', function () { st.devices[d.id].role = sel.value; save(); }); return sel; }, text: function (d) { return d.role; } },
+      { key: 'at', label: 'Approved' },
+      { key: 'rm', label: '', render: function (d) { return UI.btn('Remove', { sm: true, kind: 'quiet', icon: 'trash', onClick: function () { delete st.devices[d.id]; save(); draw(); } }); }, text: function () { return ''; } }
+    ], ids.map(function (id) { var d = st.devices[id]; return { id: id, name: d.name, user: d.user, role: d.role, at: d.at }; }), { rowKey: function (d) { return d.id; }, label: 'Approved browsers', columns: false }) : UI.empty('No approved browsers yet.');
+    var me = L.deviceId(), mine = st.devices[me];
+    U.swap(holder,
+      UI.note('info', 'Who may use APIary', 'Allowed accounts: only these Beeforce usernames can sign in (any capital letters); leave it empty for everyone. ' +
+        'Approval: each browser must be approved once — people send you the request code from the sign-in card. The admin login always gets in. ' +
+        'Changes apply after you download layout.json and commit it. These are guard rails in APIary: Beeforce still decides what an account may do.'),
+      UI.field('Allowed accounts (one per line)', allowed),
+      h('div', { style: { margin: '12px 0' } }, appr),
+      h('div.label', 'Approve a request'), paste, reqOut,
+      h('div.label', { style: { marginTop: '14px' } }, 'Approved browsers (' + ids.length + ')'), tbl,
+      h('div.small.muted', { style: { margin: '10px 0' } }, 'This browser: ' + me + (mine ? ' — approved as ' + (mine.name || mine.user) + '.' : ' — not approved.'),
+        mine ? null : [' ', h('button.linkbtn', { type: 'button', onclick: function () {
+          var u = String(Api.state.user || '').trim().toLowerCase(); if (!u) { UI.toast('Sign in to Beeforce first to approve this browser for your username.', 'bad'); return; }
+          st.devices[me] = { name: 'Admin', user: u, role: '', at: new Date().toISOString().slice(0, 10) };
+          if (st.allowedUsers.length && st.allowedUsers.indexOf(u) < 0) st.allowedUsers.push(u);
+          save(); draw();
+        } }, 'Approve this browser for ' + (Api.state.user || 'my username'))]),
+      h('div.row', { style: { marginTop: '12px' } }, h('span', { style: { flex: 1 } }),
+        UI.btn('Download layout.json', { kind: 'primary', icon: 'download', onClick: function () {
+          save();
+          UI.saveText('layout.json', JSON.stringify(L.exportRepo(L.effective()), null, 2) + '\n', 'application/json');
+          UI.toast('layout.json downloaded. Commit it next to index.js; it applies the next time people open APIary.');
         } })));
   }
   draw();

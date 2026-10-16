@@ -43,14 +43,14 @@ function datasets() {
 async function readOne(d, allPages, stopped) {
   if (!allPages) {
     var r = await ctx.EP.call(d.key, null, { module: MOD });
-    if (!r.ok) throw new Error((r.status ? 'HTTP ' + r.status + ': ' : '') + Api.parseError(r.text));
+    if (!r.ok) throw new Error(ctx.Engine.plainError(r.status, r.text));
     return { data: r.data, pages: 1 };
   }
   var all = [], prevFirst = null, n = 0, page = 0, last = null;
   for (; n < MAX_PAGES; n++, page++) {
     if (stopped && stopped()) break;
     last = await ctx.EP.call(d.key, null, { module: MOD, query: { page: page, size: PAGE_SIZE } });
-    if (!last.ok) { if (!n) throw new Error((last.status ? 'HTTP ' + last.status + ': ' : '') + Api.parseError(last.text)); break; }
+    if (!last.ok) { if (!n) throw new Error(ctx.Engine.plainError(last.status, last.text)); break; }
     var data = last.data, items = Array.isArray(data) ? data : Api.asList(data);
     var first = items.length ? JSON.stringify(items[0]) : null;
     if (n && first && first === prevFirst) break;   // the endpoint ignores paging
@@ -102,6 +102,48 @@ function fileStem() { return 'apiary_data_' + (Api.state.env || 'env') + '_' + U
 /* ---------- saved sets (this browser) ---------- */
 function savedSets() { var l = U.store.get(SKEY, []); return Array.isArray(l) ? l.filter(function (x) { return x && typeof x.name === 'string' && Array.isArray(x.keys); }) : []; }
 function saveSets(l) { return U.store.set(SKEY, l); }
+
+/* ---------- look up one employee (v3.16): the lookup forms of core/engine.js ---------- */
+function lookupCard() {
+  var E = ctx.Engine, L = E.LOOKUPS;
+  var empKey = Object.keys(L).filter(function (k) { return L[k].title === 'Employee by employee number' && (function () { try { return !ctx.EP.get(k).off; } catch (e) { return false; } })(); })[0];
+  var choices = [['timecard-update.timecards', L['timecard-update.timecards']], ['accrual-balances.balances', L['accrual-balances.balances']]].concat(empKey ? [[empKey, L[empKey]]] : [])
+    .filter(function (c) { try { return !ctx.EP.get(c[0]).off; } catch (e) { return false; } });
+  var sel = UI.select(choices.map(function (c) { return { value: c[0], label: c[1].title }; }), choices.length ? choices[0][0] : '');
+  sel.setAttribute('aria-label', 'What to look up'); sel.style.maxWidth = '320px';
+  var fieldsBox = h('div'), out = h('div'), lk = null;
+  function drawFields() { lk = E.lookupFields(L[sel.value]); U.swap(fieldsBox, lk.el); U.swap(out); }
+  sel.addEventListener('change', drawFields);
+  async function run(kind) {
+    var key = sel.value, spec = L[key];
+    U.swap(out, h('div.card', h('span.spin'), ' Reading ' + spec.title.toLowerCase() + ' from ' + Api.envLabel() + '…'));
+    try {
+      var v = lk.values(), q = await E.lookupQuery(key, v, MOD);
+      var r = await ctx.EP.call(key, null, { module: MOD, query: q });
+      if (!r.ok) throw new Error(E.plainError(r.status, r.text));
+      var stem = 'apiary_' + key.split('.').pop() + '_' + String(v.emp || '').replace(/\W+/g, '') + '_' + (Api.state.env || 'env') + '_' + U.stamp();
+      if (kind === 'json') UI.saveText(stem + '.json', JSON.stringify(r.data, null, 2), 'application/json');
+      else {
+        var t = toTable(r.data), sheet = { name: sheetName(spec.title, {}), headers: t.headers, rows: t.rows, tabColor: '0B5CC7' };
+        if (kind === 'csv') X.downloadCsv(stem + '.csv', sheet);
+        else await X.download(stem + '.xlsx', [sheet, { name: 'About', headers: ['Field', 'Value'], rows: spec.fields.map(function (f) { return [f.label, v[f.k]]; })
+          .concat([['Environment', Api.envLabel()], ['Read at', new Date().toISOString()], ['By', Api.state.user || ''], ['Rows', t.count]]) }]);
+      }
+      U.swap(out, UI.note('ok', null, 'Read ' + spec.title.toLowerCase() + ' from ' + Api.envLabel() + '.'));
+    } catch (e) { U.swap(out, UI.note('bad', 'Could not read it', e.message)); }
+  }
+  var main = UI.btn('Download (Excel)', { kind: 'primary', icon: 'download', onClick: function () { return run('xlsx'); } });
+  var split = UI.splitBtn(main, [{ header: 'Download' },
+    { icon: 'download', label: 'Excel (.xlsx)', right: 'default', onClick: function () { UI.busy(main, function () { return run('xlsx'); }); } },
+    { icon: 'download', label: 'CSV (.csv)', onClick: function () { return run('csv'); } },
+    { icon: 'code', label: 'JSON', sub: 'As Beeforce returns it', onClick: function () { return run('json'); } }], 'Download');
+  if (!choices.length) return null;
+  drawFields();
+  return h('div.card.lookupcard',
+    h('div.row', { style: { alignItems: 'center' } }, h('b', 'Look up one employee'), sel),
+    h('div.small.muted', { style: { margin: '4px 0 6px' } }, 'Type the employee number (and dates); APIary builds the request the tools use.'),
+    fieldsBox, h('div.row.lkacts', split), out);
+}
 
 ctx.defineTool('data-export', {
   desc: 'Pull setup data from Beeforce to Excel or CSV — one sheet per list, read only. Save the lists you pull often as a named set.',
@@ -199,6 +241,7 @@ ctx.defineTool('data-export', {
 
     label();
     U.append(view, [
+      lookupCard(),
       UI.note('info', null, 'Pick the lists you want and download them as one Excel file (one sheet per list), or use a row’s ⋯ menu for CSV or JSON. Lists that Beeforce sends in pages (such as Employees) need “All pages”. Only reads: nothing is changed in ' + Api.envLabel() + '.'),
       h('div.row', { style: { alignItems: 'center', margin: '6px 0 8px', flexWrap: 'wrap' } }, dl, pagesBox, h('span', { style: { flex: 1 } }), setSel, saveSet, delSet),
       holder, tbl]);

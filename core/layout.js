@@ -174,26 +174,64 @@ function isAdmin() { return !!(ctx.adminConsole || ctx.adminUnlocked); }
 /* Tools by role (v3.14), from the team file only (layout.json "access"; this browser's layout cannot change it):
  *   "access": { "roles": { "support": ["punch", "tasks", …] },          role → the tools it shows
  *               "users": { "ops.user": "support", "*": "support" },    Beeforce username → role ("*" = everyone else)
- *               "readOnly": ["support"] }                               roles that may only read (v3.15, optional)
+ *               "readOnly": ["support"],                                roles that may only read (v3.15, optional)
+ *               "allowedUsers": ["lntbtadmin"],                         only these Beeforce usernames may sign in (v3.16)
+ *               "approval": true,                                       new browsers must be approved (v3.16)
+ *               "devices": { "K7Q2-M9XD": { "name": "Ravi", "user": "lntbtadmin", "role": "support", "at": "2026-10-16" } } }
  * A user with a role sees only that role's tools; a user without a role sees every tool. Unlocked admins see every
  * tool. A read-only role can open its tools, browse and export, but APIary sends no write for it (core/engine.js).
  * This only changes what APIary does: what an account may change is still decided by Beeforce. */
+var DEVICE_RE = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/;
 function cleanAccess(a) {
-  if (!a || typeof a !== 'object' || !a.roles || typeof a.roles !== 'object') return null;
+  if (!a || typeof a !== 'object') return null;
   var roles = {}, users = {};
-  Object.keys(a.roles).forEach(function (r) { if (/^[\w .-]{1,40}$/.test(r) && Array.isArray(a.roles[r])) roles[r] = a.roles[r].filter(function (t) { return typeof t === 'string' && known(t); }); });
+  Object.keys(a.roles && typeof a.roles === 'object' ? a.roles : {}).forEach(function (r) { if (/^[\w .-]{1,40}$/.test(r) && Array.isArray(a.roles[r])) roles[r] = a.roles[r].filter(function (t) { return typeof t === 'string' && known(t); }); });
   Object.keys(a.users || {}).forEach(function (u) { var r = a.users[u]; if (typeof r === 'string' && roles[r]) users[String(u).trim().toLowerCase()] = r; });
-  if (!Object.keys(roles).length) return null;
   var out = { roles: roles, users: users };
   var ro = Array.isArray(a.readOnly) ? a.readOnly.filter(function (r, i, l) { return typeof r === 'string' && roles[r] && l.indexOf(r) === i; }) : [];
   if (ro.length) out.readOnly = ro;
+  // v3.16: allowed sign-in accounts (exact, case-insensitive) and browser approval
+  var al = Array.isArray(a.allowedUsers) ? a.allowedUsers.map(function (u) { return String(u == null ? '' : u).trim().toLowerCase(); })
+    .filter(function (u, i, l) { return u && u.length <= 100 && l.indexOf(u) === i; }) : [];
+  if (al.length) out.allowedUsers = al;
+  if (a.approval === true) out.approval = true;
+  var dv = {};
+  Object.keys(a.devices && typeof a.devices === 'object' ? a.devices : {}).forEach(function (id) {
+    var d = a.devices[id]; if (!DEVICE_RE.test(id) || !d || typeof d !== 'object' || typeof d.user !== 'string' || !d.user.trim()) return;
+    dv[id] = { name: String(d.name || '').trim().slice(0, 60), user: d.user.trim().toLowerCase(), role: typeof d.role === 'string' && roles[d.role] ? d.role : '', at: String(d.at || '').slice(0, 10) };
+  });
+  if (Object.keys(dv).length) out.devices = dv;
+  return Object.keys(roles).length || out.allowedUsers || out.approval || out.devices ? out : null;
+}
+/* This browser's device code (v3.16): random, kept in localStorage bft.device, shown in access requests. */
+function deviceId() {
+  var d = null; try { d = JSON.parse(localStorage.getItem('bft.device') || 'null'); } catch (e) {}
+  if (typeof d === 'string' && DEVICE_RE.test(d)) return d;
+  var A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', b = new Uint8Array(8), out = '';
+  try { crypto.getRandomValues(b); } catch (e) { for (var i = 0; i < 8; i++) b[i] = Math.floor(Math.random() * 256); }
+  for (var j = 0; j < 8; j++) { out += A.charAt(b[j] % A.length); if (j === 3) out += '-'; }
+  try { localStorage.setItem('bft.device', JSON.stringify(out)); } catch (e) {}
   return out;
 }
+/* The approval entry of this browser for a username, or null. */
+function deviceEntry(user) {
+  var a = access(); if (!a || !a.devices) return null;
+  var d = a.devices[deviceId()];
+  return d && d.user === String(user || '').trim().toLowerCase() ? d : null;
+}
+/* Sign-in gates (v3.16). Guard rails in APIary; Beeforce decides what an account may do. */
+function userAllowed(user) {
+  var a = access(); if (!a || !a.allowedUsers) return true;
+  return a.allowedUsers.indexOf(String(user || '').trim().toLowerCase()) >= 0;
+}
+function deviceApproved(user) { var a = access(); return !(a && a.approval) || !!deviceEntry(user); }
 function isReadOnly(role) { var a = access(); return !!(role && a && a.readOnly && a.readOnly.indexOf(role) >= 0); }
 function access() { return cleanAccess(ctx.Layout && ctx.Layout.draftAccess !== undefined ? ctx.Layout.draftAccess : ctx.repoLayout && ctx.repoLayout.access); }
 function roleOf(user) {
   var a = access(); if (!a) return null;
   var u = String(user || '').trim().toLowerCase();
+  var d = deviceEntry(u);   // v3.16: an approved browser's role comes first (colleagues may share one username)
+  if (d && d.role && a.roles[d.role]) return d.role;
   return a.users[u] || a.users['*'] || null;
 }
 
@@ -263,6 +301,7 @@ ctx.Layout = {
   // layout.json for the team (keeps the team's tools-by-role section, or the one being edited)
   exportRepo: function (model) { var d = diff(defaultsModel(), model), a = access(); if (a) d.access = a; return d; },
   access: access, cleanAccess: cleanAccess, roleOf: roleOf, isReadOnly: isReadOnly,
+  deviceId: deviceId, deviceEntry: deviceEntry, userAllowed: userAllowed, deviceApproved: deviceApproved, DEVICE_RE: DEVICE_RE,
   draftAccess: undefined, previewRole: null
 };
 build();

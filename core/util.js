@@ -126,7 +126,8 @@ function pref(k, dflt, valid) {
 }
 function setPref(k, v) { memPrefs[k] = v; return store.set(k, v); }
 function osReducedMotion() { try { return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; } }
-function themeChoice() { return pref('theme', 'system', function (v) { return THEMES.indexOf(v) >= 0; }); }
+// v3.16: Light is the default when nothing is saved (the user's choice); System and Dark stay one click away.
+function themeChoice() { return pref('theme', 'light', function (v) { return THEMES.indexOf(v) >= 0; }); }
 function motionChoice() { return pref('motion', 'calm', function (v) { return MOTIONS.indexOf(v) >= 0; }); }
 // true = the operating system's "reduce motion" setting wins (default); false = the user explicitly overrode it
 function motionFollow() { return pref('motionFollow', true, function (v) { return typeof v === 'boolean'; }); }

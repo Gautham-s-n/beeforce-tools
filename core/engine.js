@@ -52,6 +52,108 @@ function readOnlyNote() {
   return UI.note('info', 'Read only', 'Your APIary role can read and export, but not change data. Use Browse & export (or the Data Export tool) to get data. Ask the APIary admin if you need to make changes.');
 }
 
+/* =========================================================
+ * Plain-language errors (v3.16). Beeforce answers like "error.validation", "Bad Request", a Java exception or a bare
+ * status become a sentence that says what to do; Beeforce's own words follow in brackets. A message that is already
+ * readable (e.g. "Code FAIL is not allowed", "End Date is required") is kept exactly as it is.
+ * ========================================================= */
+function words(f) { return String(f || '').replace(/\./g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase().replace(/^./, function (c) { return c.toUpperCase(); }); }
+var STATUS_TEXT = {
+  400: 'Beeforce did not accept the data. Check the values on this row.',
+  401: 'The Beeforce session has ended, or this account may not do this. Sign in again.',
+  403: 'This Beeforce account is not allowed to do this.',
+  404: 'Not found: the record or the address does not exist in this environment.',
+  405: 'Beeforce does not allow this action here.',
+  409: 'Conflict: the record already exists, or someone changed it meanwhile.',
+  413: 'Too much data in one request.',
+  415: 'Beeforce did not accept the format of the data.',
+  422: 'Beeforce did not accept the data. Check the values on this row.',
+  429: 'Beeforce is busy (too many requests). Wait a moment, then retry.',
+  500: 'Beeforce had a problem on its side. Try again later; if it repeats, check the data on this row.',
+  502: 'Beeforce could not be reached just now. Try again in a moment.',
+  503: 'Beeforce is not available just now. Try again in a moment.',
+  504: 'Beeforce took too long to answer. Try again in a moment.'
+};
+function plainError(status, text) {
+  var raw = Api.parseError(text);
+  var o = null; try { o = typeof text === 'string' ? JSON.parse(text) : text; } catch (e) {}
+  // field violations that only name a code ("must not be null", "NotNull") → "<Field> is required"
+  if (o && Array.isArray(o.violations) && o.violations.length) {
+    var vs = o.violations.map(function (v) {
+      var m = String(v.message || '');
+      if (/must not be (null|blank|empty)|may not be (null|empty)|cannot be (null|blank)|^not ?(null|blank|empty)$/i.test(m)) return words(v.field) + ' is required';
+      if (!m || /^[a-z]+(\.[a-z]+)+$/i.test(m)) return words(v.field) + ' is not valid';
+      return m;
+    });
+    if (vs.every(function (x, i) { return x === String(o.violations[i].message || ''); })) return raw;   // already readable
+    return vs.join('; ') + '.';
+  }
+  if (/^Network error/i.test(raw)) return 'Could not reach Beeforce (network). Check the connection, then retry. (' + raw + ')';
+  if (/duplicate key|unique constraint|unique index|already exists|constraint \[?uk_/i.test(raw)) return 'A record with the same code or name already exists. (Beeforce: ' + raw.slice(0, 160) + ')';
+  var generic = !raw || raw === 'No details' || /^(error\.[\w.]+|bad request|internal server error|not found|forbidden|unauthorized|method not allowed|conflict|service unavailable|gateway time-?out|bad gateway)\.?$/i.test(raw) ||
+    /^[\[{<]/.test(raw) || /(Exception|\bat [\w$.]+\(|SQL \[|could not execute)/.test(raw);
+  var st = STATUS_TEXT[status] || (status >= 500 ? STATUS_TEXT[500] : status >= 400 ? STATUS_TEXT[400] : null);
+  var said = o && typeof o === 'object' && !Array.isArray(o) ? String(o.message || o.detail || o.title || o.error || '') : '';
+  // statuses whose own words rarely help (session, permission, missing, overload, server side) always get the sentence
+  if (!generic && st && [401, 403, 404, 405, 429].indexOf(status) < 0 && status < 500) return raw;
+  if (st) return st + (raw && raw !== 'No details' ? ' (Beeforce: ' + (said || raw).slice(0, 160) + ')' : '');
+  return raw;
+}
+
+/* =========================================================
+ * Lookup forms (v3.16). GET calls that need values from the person — an employee number and dates — get labelled
+ * fields in the Developer panel, the API explorer and Data Export, built from the queries the tools already send.
+ *   fields: [{ k, label, type: 'text'|'date', emp: true (employee number → employee id first) }]
+ *   query(values, empId) → the query object;  fixed values ride along as the tools send them.
+ * ========================================================= */
+var EMP_KEYS = ['ot-approval.employees', 'punch.employees', 'workflow-transfer.employees', 'timeoff-raise.employees', 'accrual-balances.employees'];
+var EMP_LOOKUP = { title: 'Employee by employee number', fields: [{ k: 'emp', label: 'Employee number' }], query: function (v) { return { 'externalNumber.equals': v.emp }; } };
+var LOOKUPS = {
+  'timecard-update.timecards': { title: 'Timecards of one employee', fields: [{ k: 'emp', label: 'Employee number' }, { k: 'startDate', label: 'Start date', type: 'date' }, { k: 'endDate', label: 'End date', type: 'date' }],
+    query: function (v) { return { startDate: v.startDate, endDate: v.endDate, externalNumber: v.emp, attributes: 'attendancePunches(organizationLocation|shiftTemplate),schedule(shiftTemplate)' }; } },
+  'accrual-balances.balances': { title: 'Accrual balances of one employee', fields: [{ k: 'emp', label: 'Employee number', emp: true }, { k: 'effectiveDate', label: 'On date', type: 'date' }],
+    query: function (v, id) { return { 'employeeId.equals': id, effectiveDate: v.effectiveDate }; } }
+};
+EMP_KEYS.forEach(function (k) { LOOKUPS[k] = EMP_LOOKUP; });
+function today() { var d = new Date(); return d.getFullYear() + '-' + U.pad(d.getMonth() + 1) + '-' + U.pad(d.getDate()); }
+function lookupCheck(spec, v) {
+  var miss = spec.fields.filter(function (f) { return !String(v[f.k] || '').trim(); }).map(function (f) { return f.label; });
+  if (miss.length) return 'Fill ' + miss.join(', ') + '.';
+  var bad = spec.fields.filter(function (f) { return f.type === 'date' && !/^\d{4}-\d{2}-\d{2}$/.test(v[f.k]); }).map(function (f) { return f.label; });
+  if (bad.length) return bad.join(', ') + ': use a date (YYYY-MM-DD).';
+  if (v.startDate && v.endDate && v.startDate > v.endDate) return 'Start date is after End date.';
+  return null;
+}
+/* Employee number → Beeforce employee id, with the employee lookup the tools use. */
+async function employeeId(num, module) {
+  var key = EMP_KEYS.filter(function (k) { try { return !ctx.EP.get(k).off; } catch (e) { return false; } })[0];
+  if (!key) throw new Error('The employee lookup is turned off in Admin Settings → API endpoints.');
+  var r = await ctx.EP.call(key, null, { query: { 'externalNumber.equals': num }, module: module || 'Lookup' });
+  if (!r.ok) throw new Error(plainError(r.status, r.text));
+  var e = Api.asList(r.data)[0] || (r.data && !Array.isArray(r.data) && r.data.id != null ? r.data : null);
+  if (!e || e.id == null) throw new Error('No employee with number ' + num + ' in ' + Api.envLabel() + '.');
+  return e.id;
+}
+async function lookupQuery(key, v, module) {
+  var spec = LOOKUPS[key]; if (!spec) return {};
+  var err = lookupCheck(spec, v); if (err) throw new Error(err);
+  var id = spec.fields.some(function (f) { return f.emp; }) ? await employeeId(String(v.emp).trim(), module) : null;
+  var vv = {}; Object.keys(v).forEach(function (k) { vv[k] = String(v[k]).trim(); });
+  return spec.query(vv, id);
+}
+/* Labelled inputs for a lookup; returns { el, values() }. Dates start at today. */
+function lookupFields(spec, onInput) {
+  var vals = {};
+  var inputs = spec.fields.map(function (f) {
+    var inp = UI.input({ type: f.type === 'date' ? 'date' : 'text', placeholder: f.type === 'date' ? 'YYYY-MM-DD' : f.label, value: f.type === 'date' ? today() : '' });
+    inp.dataset.k = f.k; vals[f.k] = inp.value;
+    inp.addEventListener('input', function () { vals[f.k] = inp.value; onInput && onInput(); });
+    inp.addEventListener('change', function () { vals[f.k] = inp.value; onInput && onInput(); });
+    return UI.field(f.label, inp);
+  });
+  return { el: h('div.grid3.lookupfields', inputs), values: function () { return Object.assign({}, vals); } };
+}
+
 /* Production guard (v3.15): in Production, a run of many items, or any delete, asks you to type PRODUCTION first.
  * Settings for this browser (Admin Settings → Safety): bft.prodGuard = { on: true, min: 20 }. */
 var GUARD_DEFAULT = { on: true, min: 20 };
@@ -134,6 +236,7 @@ function saveRun(o) {
   var st = Api.state;
   var rec = {
     at: new Date().toISOString(), kind: o.kind || 'apply', tool: o.tool || 'Tool', user: st.user || '', env: st.env || '', envLabel: Api.envLabel() || '',
+    device: ctx.Layout.deviceId(), person: (ctx.Layout.deviceEntry(st.user) || {}).name || '',
     host: location.host, version: ctx.CONFIG.VERSION, file: o.file || null,
     sent: o.todo.length, ok: o.res.ok.length, failed: o.res.failed.length,
     items: o.todo.slice(0, 5000).map(function (it) { var r = it.result || {}; return { row: it.row == null ? '' : it.row, label: it.label || '', kind: it.kind, ok: !!r.ok, status: r.status || '', msg: r.msg || '', id: r.id == null ? '' : r.id }; }),
@@ -203,7 +306,7 @@ async function runQueue(panel, items, opts) {
     try { res = await it.run(); }
     catch (e) { res = { ok: false, status: 0, text: e.message }; }
     res = res || { ok: false, status: 0, text: 'No response' };
-    var msg = res.ok ? (res.msg || 'OK') : (res.msg || Api.parseError(res.text));
+    var msg = res.ok ? (res.msg || 'OK') : (res.msg || plainError(res.status, res.text));
     var newId = '';
     if (res.ok && res.data && typeof res.data === 'object' && res.data.id != null) newId = res.data.id;
     it.result = { ok: !!res.ok, status: res.status, msg: msg, id: newId };
@@ -858,7 +961,7 @@ function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 /* ---------- run journal screen (user menu → Run journal, or search "journal") ---------- */
 function when(iso) { var d = new Date(iso); return isNaN(d) ? iso : d.getFullYear() + '-' + U.pad(d.getMonth() + 1) + '-' + U.pad(d.getDate()) + ' ' + U.pad(d.getHours()) + ':' + U.pad(d.getMinutes()); }
 function runExcel(r) {
-  var sum = [['When', when(r.at)], ['Tool', r.tool], ['What', r.kind === 'delete' ? 'Delete' : 'Apply'], ['Environment', r.envLabel], ['Signed in as', r.user], ['Site', r.host], ['APIary', r.version],
+  var sum = [['When', when(r.at)], ['Tool', r.tool], ['What', r.kind === 'delete' ? 'Delete' : 'Apply'], ['Environment', r.envLabel], ['Signed in as', r.user], ['Person (approved browser)', r.person || ''], ['Browser', r.device || ''], ['Site', r.host], ['APIary', r.version],
     ['File', r.file ? r.file.name : ''], ['File SHA-256', r.file ? r.file.sha256 || '' : ''], ['Rows in file', r.file ? r.file.rows : ''],
     ['Sent', r.sent], ['Succeeded', r.ok], ['Failed', r.failed], ['Undo data', r.undo ? 'yes' : 'no']];
   return X.download('apiary_run_' + r.id + '_' + String(r.tool).replace(/\W+/g, '_').toLowerCase() + '.xlsx', [
@@ -906,7 +1009,7 @@ function openJournal() {
         if (!list.length) return U.swap(holder, UI.empty('No runs yet. Every Apply and Delete from now on is recorded here.'));
         var tbl = UI.table([
           { key: 'at', label: 'When', text: function (r) { return when(r.at); }, render: function (r) { return when(r.at); } },
-          { key: 'tool', label: 'Tool' }, { key: 'envLabel', label: 'Environment' }, { key: 'user', label: 'By' },
+          { key: 'tool', label: 'Tool' }, { key: 'envLabel', label: 'Environment' }, { key: 'user', label: 'By', text: function (r) { return r.user + (r.person ? ' · ' + r.person : ''); }, render: function (r) { return r.user + (r.person ? ' · ' + r.person : ''); } },
           { key: 'file', label: 'File', text: function (r) { return r.file ? r.file.name : r.kind === 'delete' ? '(delete)' : ''; }, render: function (r) { return r.file ? r.file.name : r.kind === 'delete' ? h('span.muted', 'Delete') : ''; } },
           { key: 'ok', label: 'OK', num: true }, { key: 'failed', label: 'Failed', num: true },
           { key: 'undo', label: 'Undo', text: function (r) { return r.undo ? 'yes' : ''; }, render: function (r) { return r.undo ? UI.chip('Undo', 'upd') : ''; } }
@@ -948,6 +1051,7 @@ function signInOther() {
     form.addEventListener('submit', async function (e) {
       e.preventDefault(); err.textContent = '';
       if (!user.value.trim() || !pass.value) { err.textContent = 'Enter your username and password.'; return; }
+      if (!ctx.Layout.userAllowed(user.value.trim())) { err.textContent = 'This account is not allowed in APIary. Ask the APIary admin.'; return; }   // v3.16
       go.disabled = true;
       var keep = Object.assign({}, Api.state), saved = null;
       try { saved = sessionStorage.getItem('bft.session'); } catch (x) {}
@@ -1086,9 +1190,15 @@ ctx.CSS += '\n' + [
   '.dlg.wide .twrap{max-height:42vh}',
   '.guard{margin:12px 0}.guard label{display:block;margin:0 0 6px}.guard .input{max-width:260px;font-family:var(--mono);letter-spacing:.06em}',
   '.app.ro .btn.delsel{display:none}',
+  '.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:4px 14px}',
+  '.lookupcard{margin:0 0 14px}.lookupcard .lkacts{margin-top:8px;align-items:center}',
+  '.plainerr{margin:6px 0;color:var(--bad)}',
+  '.rolefold svg{transition:transform .15s}.rolefold:not(.on) svg{transform:rotate(-90deg)}.rolecard .rolebody{margin-top:10px}.rolecount{white-space:nowrap}',
+  '.reqpanel .reqcode,.reqpaste{font-family:var(--mono);font-size:12px;word-break:break-all}.reqadmin{margin-top:12px}',
   '.app.ro .envpill::after{content:"Read only";margin-left:8px;padding:1px 6px;border:1px solid currentColor;border-radius:3px;font-size:11px;font-weight:600;opacity:.85}'
 ].join('\n');
 
 ctx.Engine = { ERR_COLS: ERR_COLS, exportButton: exportButton, runQueue: runQueue, uploadFlow: uploadFlow, entity: entity, runDeletes: runDeletes, reportSheet: reportSheet, applicable: applicable, same: same,
   Journal: Journal, openJournal: openJournal, runAndRecord: runAndRecord, capture: capture, captureSheets: captureSheets, fileHash: fileHash, compareTab: compareTab, withOther: withOther, undoFile: undoFile,
-  readOnly: readOnly, readOnlyNote: readOnlyNote, guardSettings: guardSettings, GUARD_DEFAULT: GUARD_DEFAULT, READ_POSTS: READ_POSTS };
+  readOnly: readOnly, readOnlyNote: readOnlyNote, guardSettings: guardSettings, GUARD_DEFAULT: GUARD_DEFAULT, READ_POSTS: READ_POSTS,
+  plainError: plainError, LOOKUPS: LOOKUPS, lookupQuery: lookupQuery, lookupFields: lookupFields, lookupCheck: lookupCheck, employeeId: employeeId };

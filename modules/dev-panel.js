@@ -168,8 +168,9 @@ function responseView(res, base) {
       save(name('csv'), csv(toTable(cur)), 'text/csv');
     } }));
   refresh();
-  return h('div.devres', acts, whole != null ? h('div', { style: { marginTop: '8px' } }, partIn, chips) : null,
-    !r.ok && r.text && whole == null ? h('div.small.badtxt', { style: { margin: '6px 0' } }, Api.parseError(r.text)) : null, pre);
+  // v3.16: a failed call says in plain words what went wrong, above the raw response
+  return h('div.devres', acts, !r.ok ? h('div.small.plainerr', { role: 'status' }, ctx.Engine.plainError(r.status, r.text)) : null,
+    whole != null ? h('div', { style: { marginTop: '8px' } }, partIn, chips) : null, pre);
 }
 
 /* A "Send" bar shared by registered endpoints and custom paths. getReq() → { path, query, base } or null. */
@@ -179,8 +180,10 @@ function sender(getReq, module) {
   allPages.title = 'Follow ?page=0,1,2… and combine every page into one list';
   var stop = false;
   async function run() {
-    var req = getReq(); if (!req) return;
     if (!signedIn()) { UI.toast('Sign in to Beeforce first.', 'bad'); return; }
+    var req;
+    try { req = await getReq(); } catch (e) { UI.toast(e.message, 'bad'); return; }
+    if (!req) return;
     stop = false;
     var prog = h('span', ' Sending GET to ' + Api.envLabel() + '…');
     var stopBtn = allPages.input.checked ? UI.btn('Stop', { sm: true, kind: 'quiet', icon: 'stop', onClick: function () { stop = true; } }) : null;
@@ -199,10 +202,22 @@ function endpointCard(key, o) {
   var el = h('div.devcard');
   var params = {}, qIn = UI.input({ placeholder: 'extra query, e.g. page=0&size=20' });
   var editing = false, sendBox = null, collapsed = false;
+  // v3.16: lookups (employee number, dates) get labelled fields instead of a hand-written query
+  var spec = ctx.Engine.LOOKUPS[key], lk = null, lkRefresh = function () {};
   function draw() {
     var e = EP.get(key), ph = placeholders(e.path), isGet = e.method === 'GET';
     var urlEl = h('code.devurl');
-    function refreshUrl() { urlEl.textContent = EP.url(key, params, parseQuery(qIn.value)); }
+    function lkPreview() {
+      if (!lk) return {};
+      var v = lk.values(), q;
+      try { q = spec.query(v, spec.fields.some(function (f) { return f.emp; }) ? '{id of ' + (v.emp || 'employee') + '}' : null); } catch (x) { q = {}; }
+      Object.keys(q).forEach(function (k) { if (q[k] == null || q[k] === '') delete q[k]; });
+      return q;
+    }
+    function refreshUrl() { urlEl.textContent = EP.url(key, params, Object.assign(lkPreview(), parseQuery(qIn.value))); }
+    lkRefresh = refreshUrl;
+    if (spec && isGet && !lk) lk = ctx.Engine.lookupFields(spec, function () { lkRefresh(); });
+    function curlQuery() { return Object.assign(lkPreview(), parseQuery(qIn.value)); }
     var inputs = ph.map(function (p) {
       var inp = UI.input({ placeholder: p, value: params[p] || '' });
       inp.addEventListener('input', function () { params[p] = inp.value.trim(); refreshUrl(); });
@@ -210,10 +225,11 @@ function endpointCard(key, o) {
     });
     qIn.oninput = refreshUrl;
     refreshUrl();
-    var s = sender(function () {
+    var s = sender(async function () {
       var miss = ph.filter(function (p) { return !params[p]; });
       if (miss.length) { UI.toast('Fill ' + miss.join(', ') + ' first.', 'bad'); return null; }
-      return { path: EP.path(key, params), query: Object.assign({}, e.query || {}, parseQuery(qIn.value)), base: e.tool + '_' + key.split('.').pop() };
+      var lq = lk ? await ctx.Engine.lookupQuery(key, lk.values(), o.module || 'Developer panel') : {};
+      return { path: EP.path(key, params), query: Object.assign({}, e.query || {}, lq, parseQuery(qIn.value)), base: e.tool + '_' + key.split('.').pop() };
     }, o.module || 'Developer panel');
     if (sendBox) U.swap(s.out, Array.prototype.slice.call(sendBox.childNodes));
     sendBox = s.out;
@@ -223,7 +239,7 @@ function endpointCard(key, o) {
       ev.stopPropagation();
       UI.menu(more, [{ header: e.method + ' ' + e.path },
         { icon: 'copy', label: 'Copy path', sub: 'As registered (placeholders kept)', onClick: function () { copy(e.path, 'Path'); } },
-        { icon: 'code', label: 'Show cURL', sub: 'Token stays a placeholder', onClick: function () { UI.codeDialog(e.method + ' · ' + (e.label || key), EP.curl(key, params, { query: parseQuery(qIn.value) }), { what: 'cURL', filename: key + '.sh', mime: 'text/x-shellscript', note: 'The Authorization header uses $BEEFORCE_TOKEN. Nothing is sent from here.' }); } }],
+        { icon: 'code', label: 'Show cURL', sub: 'Token stays a placeholder', onClick: function () { UI.codeDialog(e.method + ' · ' + (e.label || key), EP.curl(key, params, { query: curlQuery() }), { what: 'cURL', filename: key + '.sh', mime: 'text/x-shellscript', note: 'The Authorization header uses $BEEFORCE_TOKEN. Nothing is sent from here.' }); } }],
         { right: true, label: 'Endpoint actions' });
     });
     var fold = h('button.iconbtn.devfold', { type: 'button', 'aria-expanded': collapsed ? 'false' : 'true', 'aria-label': (collapsed ? 'Expand ' : 'Collapse ') + (e.label || key), title: collapsed ? 'Expand' : 'Collapse', onclick: function () { collapsed = !collapsed; draw(); } }, U.icon('chev', 16));
@@ -235,20 +251,21 @@ function endpointCard(key, o) {
       urlEl,
       e.off ? h('div.small.muted', { style: { marginTop: '6px' } }, 'The tool skips this call (as if it failed). Turn it on to use it again.') : null,
       editing ? editor(e) : null,
-      inputs.length || isGet ? h('div.grid2', { style: { marginTop: '8px' } }, inputs, isGet ? UI.field('Query', qIn) : null) : null,
+      lk ? h('div', { style: { marginTop: '8px' } }, h('div.small.muted', spec.title + ' — fill these; the query is built for you.'), lk.el) : null,
+      inputs.length || isGet ? h('div.grid2', { style: { marginTop: '8px' } }, inputs, isGet ? UI.field(lk ? 'More query (optional)' : 'Query', qIn) : null) : null,
       h('div.row.devacts', { style: { marginTop: '8px', alignItems: 'center' } },
         isGet ? (signedIn() ? [UI.btn('Send GET', { sm: true, kind: 'primary', icon: 'play', onClick: s.run }), s.allPages] : h('span.small.dim', 'Sign in to Beeforce to send requests.'))
           : h('span.small.dim', 'Writes are not sent from here — copy as cURL or Postman.'),
         h('span', { style: { flex: 1 } }),
         UI.btn(editing ? 'Close edit' : 'Edit', { sm: true, kind: 'quiet', icon: 'edit', onClick: function () { editing = !editing; draw(); } }),
         EP.canOff(key) ? UI.btn(e.off ? 'Turn on' : 'Turn off', { sm: true, kind: 'quiet', icon: 'power', onClick: function () { toggleOff(e); } }) : null,
-        UI.btn('cURL', { sm: true, kind: 'quiet', icon: 'copy', onClick: function () { return copy(EP.curl(key, params, { query: parseQuery(qIn.value) }), 'cURL (token hidden as $BEEFORCE_TOKEN)'); } }),
+        UI.btn('cURL', { sm: true, kind: 'quiet', icon: 'copy', onClick: function () { return copy(EP.curl(key, params, { query: curlQuery() }), 'cURL (token hidden as $BEEFORCE_TOKEN)'); } }),
         signedIn() ? UI.btn('cURL + token', { sm: true, kind: 'quiet', icon: 'copy', onClick: curlWithToken }) : null,
         UI.btn('Postman', { sm: true, kind: 'quiet', icon: 'download', onClick: function () { save(key + '.postman_collection.json', JSON.stringify(EP.postman([e], 'APIary · ' + (e.label || key)), null, 2)); } })),
       sendBox);
     async function curlWithToken() {
       var ok = await UI.confirm({ title: 'Copy cURL with your live token?', body: 'Anyone who gets this text can act as you on ' + Api.envLabel() + ' until the session ends. Don\'t paste it into chat, tickets or email.', verb: 'Copy with token', danger: true });
-      if (ok) return copy(EP.curl(key, params, { withToken: true, query: parseQuery(qIn.value) }), 'cURL (with token)');
+      if (ok) return copy(EP.curl(key, params, { withToken: true, query: curlQuery() }), 'cURL (with token)');
     }
   }
   function editor(e) {

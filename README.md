@@ -1,4 +1,4 @@
-# APIary (v3.15.0)
+# APIary (v3.16.0)
 
 APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
@@ -199,6 +199,47 @@ step back and forward.
     an export taken before the run).
   - **Created policies** can be deleted from the report or the run journal.
 
+## Access, lookups, plain errors (v3.16)
+
+- **Allowed accounts** (Admin Settings → **Access**): only the Beeforce usernames in the list can sign in, for example
+  `LNTBTADMIN`. Capital letters don't matter. Any other username is refused on the sign-in card, before anything is
+  sent to Beeforce. An empty list means everyone. The admin console login is never blocked.
+- **Browser approval** (Admin Settings → Access → "New browsers must be approved"):
+  1. A colleague signs in. Their browser is not approved yet, so the card shows **Ask for access**.
+  2. They type their name and send you the **request code** (any channel). The code holds their name, the username,
+     their browser's code, the environment and the date — no password.
+  3. You paste the code under "Approve a request", pick a role, and click **Approve**.
+  4. Download `layout.json` and commit it. From then on that browser gets in with that role.
+  - **One browser each.** The same username on another browser (or after clearing browser data) has to ask again.
+    Colleagues may share one Beeforce username: each approved browser has its own name and role, and the run journal
+    and audit messages show that name next to the username.
+  - **Removing someone:** Remove their row, download and commit. Their next open goes back to the sign-in card.
+  - **Your own browser:** "Approve this browser for <you>" on the Access tab. On a browser that is not approved yet,
+    use "I am the APIary admin" on the request card with the admin password.
+  - **Limits:** these are guard rails in APIary, not Beeforce permissions. The list and the approved browsers are in
+    `layout.json`, which is public in the repository.
+- **Tools by role:** each role folds; the header shows its name, Read only and the number of tools.
+- **Lookup forms:** lookups that need an employee and dates get labelled fields (Employee number, Start date, End
+  date) instead of a hand-written query:
+  - in Data Export → **Look up one employee** (Timecards, Accrual balances, Employee by number), with Excel, CSV or
+    JSON download — also for read-only roles;
+  - in the Developer panel and the API explorer, on the same endpoints. The URL preview follows the fields; "More
+    query" adds extra filters.
+  - The request is the one the tools send. For balances, the employee number is looked up first to find the id.
+- **Plain-language errors:** when Beeforce answers with a code ("error.validation"), a bare status, or a technical
+  exception, APIary says what it means and what to do, with Beeforce's own words in brackets. Messages that are
+  already readable ("End Date is required") are shown as they are.
+- **Light theme by default** for browsers that have not picked one. A saved choice (System, Light or Dark) is kept.
+
+## Share APIary with a colleague
+
+1. Send them the bookmark line (Set up, step 2, with your repository) and the sign-in client id and secret, through
+   a password manager.
+2. They make a bookmark: show the bookmarks bar (Ctrl+Shift+B), right-click it → **Add page** (Edge: **Add
+   favorite**). Name: **`⬢ APIary`**. URL: paste the whole line. (Pasting it in the address bar does not work.)
+3. They open Beeforce, click the bookmark, enter the client id and secret once, and sign in.
+4. If browser approval is on, they send you the request code; approve it and commit `layout.json`.
+
 ## Admin console (Settings)
 
 The Settings screens open only through the **admin console login**: username `bft.admin` (fixed in `config.js`)
@@ -240,6 +281,7 @@ the screens but is not server-grade security; the real lock is who can commit to
 - **Sign-in & audit** — client id/secret and audit webhook for this browser; status: configured / not configured / needs attention.
 - **API explorer** — see above: test, edit, turn off and download any endpoint; send a GET to any Beeforce path.
 - **Tools by role** — roles, their tools, read only, and who has which role (see v3.15 above).
+- **Access** — allowed accounts and browser approval (see v3.16 above).
 - **Safety** — the Production guard for this browser.
 - **API endpoints** — every Beeforce call the tools make (method + path), editable as a table. "Import Postman collection" (v2.1)
   checks a collection against the registry: matched (green), check (amber), missing (red — keeps the current URL),
