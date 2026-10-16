@@ -173,16 +173,23 @@ function isAdmin() { return !!(ctx.adminConsole || ctx.adminUnlocked); }
 
 /* Tools by role (v3.14), from the team file only (layout.json "access"; this browser's layout cannot change it):
  *   "access": { "roles": { "support": ["punch", "tasks", …] },          role → the tools it shows
- *               "users": { "ops.user": "support", "*": "support" } }    Beeforce username → role ("*" = everyone else)
+ *               "users": { "ops.user": "support", "*": "support" },    Beeforce username → role ("*" = everyone else)
+ *               "readOnly": ["support"] }                               roles that may only read (v3.15, optional)
  * A user with a role sees only that role's tools; a user without a role sees every tool. Unlocked admins see every
- * tool. This only changes what APIary shows: what an account may change is still decided by Beeforce. */
+ * tool. A read-only role can open its tools, browse and export, but APIary sends no write for it (core/engine.js).
+ * This only changes what APIary does: what an account may change is still decided by Beeforce. */
 function cleanAccess(a) {
   if (!a || typeof a !== 'object' || !a.roles || typeof a.roles !== 'object') return null;
   var roles = {}, users = {};
   Object.keys(a.roles).forEach(function (r) { if (/^[\w .-]{1,40}$/.test(r) && Array.isArray(a.roles[r])) roles[r] = a.roles[r].filter(function (t) { return typeof t === 'string' && known(t); }); });
   Object.keys(a.users || {}).forEach(function (u) { var r = a.users[u]; if (typeof r === 'string' && roles[r]) users[String(u).trim().toLowerCase()] = r; });
-  return Object.keys(roles).length ? { roles: roles, users: users } : null;
+  if (!Object.keys(roles).length) return null;
+  var out = { roles: roles, users: users };
+  var ro = Array.isArray(a.readOnly) ? a.readOnly.filter(function (r, i, l) { return typeof r === 'string' && roles[r] && l.indexOf(r) === i; }) : [];
+  if (ro.length) out.readOnly = ro;
+  return out;
 }
+function isReadOnly(role) { var a = access(); return !!(role && a && a.readOnly && a.readOnly.indexOf(role) >= 0); }
 function access() { return cleanAccess(ctx.Layout && ctx.Layout.draftAccess !== undefined ? ctx.Layout.draftAccess : ctx.repoLayout && ctx.repoLayout.access); }
 function roleOf(user) {
   var a = access(); if (!a) return null;
@@ -234,6 +241,7 @@ function build() {
   }
   ctx.MODULES = MODULES; ctx.MODULE_LIST = MODULE_LIST; ctx.AREAS = AREAS; ctx.TOOLS = TOOLS;
   ctx.ROLE = role;
+  ctx.READONLY = isReadOnly(role);
   return { modules: MODULES, areas: AREAS, tools: TOOLS, admin: isAdmin(), role: role };
 }
 
@@ -254,7 +262,7 @@ ctx.Layout = {
   clearLocal: function () { try { localStorage.removeItem(LKEY); } catch (e) {} },
   // layout.json for the team (keeps the team's tools-by-role section, or the one being edited)
   exportRepo: function (model) { var d = diff(defaultsModel(), model), a = access(); if (a) d.access = a; return d; },
-  access: access, cleanAccess: cleanAccess, roleOf: roleOf,
+  access: access, cleanAccess: cleanAccess, roleOf: roleOf, isReadOnly: isReadOnly,
   draftAccess: undefined, previewRole: null
 };
 build();

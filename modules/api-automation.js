@@ -915,7 +915,7 @@ ctx.defineTool('api-automation', {
           title: 'Send ' + plan.length + ' request' + (plan.length === 1 ? '' : 's') + '?',
           body: h('div', h('p.muted', Object.keys(by).map(function (m) { return by[m] + ' ' + m; }).join(', ') + ' to /api/' + getEndpoint() + '.'),
             h('p.muted.small', 'Every row is sent as shown in the review.')),
-          verb: 'Send ' + plan.length, danger: !!by.DELETE
+          verb: 'Send ' + plan.length, danger: !!by.DELETE, count: writes.length
         });
         if (!ok) return;
       }
@@ -1067,7 +1067,7 @@ ctx.defineTool('api-automation', {
         var bt = bodyVal == null ? '' : typeof bodyVal === 'string' ? bodyVal : JSON.stringify(bodyVal, null, 2);
         var ok = await UI.confirm({ title: 'Send this ' + method + ' request?',
           body: h('div', h('pre.aa-pre', method + ' ' + url + (bt ? '\n\n' + (bt.length > 1500 ? bt.slice(0, 1500) + '\n…' : bt) : ''))),
-          verb: 'Send ' + method, danger: method === 'DELETE' });
+          verb: 'Send ' + method, danger: method === 'DELETE', count: 1 });
         if (!ok) return;
       }
       var res = await send(method, ep, bodyVal);

@@ -39,8 +39,8 @@
       tools: ['outpass-policies', 'outpass-policy-sets'] },
     { id: 'people', module: 'attendance', name: 'People & access', icon: 'people', desc: 'Create employees in bulk, roles and positions, and the employee / org lookup tables.',
       tools: ['employee-bulk-create', 'roles', 'employee-lookup', 'org-lookup'] },
-    { id: 'automation', module: 'attendance', name: 'Automation', icon: 'bolt', desc: 'Playbooks, API chains from a spreadsheet, and a health check of the setup.',
-      tools: ['api-automation', 'playbooks', 'health'] }
+    { id: 'automation', module: 'attendance', name: 'Automation', icon: 'bolt', desc: 'Playbooks, API chains from a spreadsheet, a health check of the setup, and data exports.',
+      tools: ['api-automation', 'playbooks', 'health', 'data-export'] }
   ];
 
   var TOOLS = {
@@ -71,7 +71,8 @@
     'org-lookup': { icon: 'building', name: 'Org Lookup', hint: 'Location field rules' },
     'api-automation': { icon: 'bolt', name: 'API Automation', hint: 'Chain API calls from Excel' },
     'playbooks': { icon: 'layers', name: 'Playbooks', hint: 'Several tools from one workbook' },
-    'health': { icon: 'shield', name: 'Health Check', hint: 'Broken links and unused setup' }
+    'health': { icon: 'shield', name: 'Health Check', hint: 'Broken links and unused setup' },
+    'data-export': { icon: 'download', name: 'Data Export', hint: 'Lists to Excel, read only' }
   };
 
   var CORE = ['config', 'core/secrets', 'core/util', 'core/layout', 'core/styles', 'core/excel', 'core/api', 'core/endpoints', 'core/audit', 'core/ui', 'core/engine', 'core/shell'];

@@ -174,7 +174,7 @@ ctx.defineTool('playbooks', {
       var todo = steps.filter(function (s) { return s.state !== 'done'; });
       var n = todo.reduce(function (a, s) { return a + s.items.filter(E.applicable).length; }, 0);
       var ok = await UI.confirm({ title: 'Run ' + todo.length + ' step' + (todo.length === 1 ? '' : 's') + '?', body: h('div', h('p.muted', 'About ' + n + ' change(s) now, plus the waiting rows once their step has run. Steps run in order and stop at the first problem.'),
-        h('div.muted.small', todo.map(function (s) { return h('div', s.n + '. ' + s.name + ' — ' + s.counts); }))), verb: 'Run playbook' });
+        h('div.muted.small', todo.map(function (s) { return h('div', s.n + '. ' + s.name + ' — ' + s.counts); }))), verb: 'Run playbook', count: n });
       if (!ok) return;
       var panel = UI.runPanel('Playbook · ' + wb.name + ' · ' + Api.envLabel());
       U.swap(body, panel);

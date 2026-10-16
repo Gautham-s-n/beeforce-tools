@@ -1,4 +1,4 @@
-# APIary (v3.14.0)
+# APIary (v3.15.0)
 
 APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
@@ -167,6 +167,38 @@ step back and forward.
   - **To publish:** "Download layout.json" adds the roles to the team layout. Commit it next to `index.js`.
   - **Not a lock:** this only changes what APIary shows. What an account may change is still decided by Beeforce.
 
+## Read-only roles, Data Export, Production guard (v3.15)
+
+- **Read-only roles** (Admin Settings → Tools by role → tick "Read only" on a role): people with that role can open
+  their tools, browse and export, but APIary sends no changes for them.
+  - **What they see:** "Read only" next to the environment in the top bar. Upload steps show a note instead of the
+    file drop. Delete buttons are hidden. Any confirm that would send changes answers with a message instead.
+  - **What is blocked:** every request other than GET is stopped in the browser before it is sent, and runs send
+    nothing. The one POST that only reads (org level entries in Employee Bulk Create) still goes out.
+  - **Admins:** unlocking admin tools lifts read only. "Preview as" a read-only role is read only too.
+  - **In layout.json:** `"access": { …, "readOnly": ["viewer"] }`. Roles not listed can write as before.
+  - **Not a lock:** this is a guard rail in APIary, not a permission. A person with a Beeforce account can still
+    change data in Beeforce itself. For real protection, give colleagues Beeforce accounts that cannot write.
+- **Data Export** (Automation → Data Export): every list the tools read, ready to download.
+  - **One file:** tick the lists you want → "Download (Excel)": one sheet per list, plus an About sheet (what was read,
+    from where, when, by whom). A row's ⋯ menu gives CSV or JSON of that one list.
+  - **Same requests:** each list is read with the request the tools use (the fullest one, when tools read the same
+    list in different ways). "All pages" asks for `page=0,1,2…` (200 per page) for lists that Beeforce sends in pages,
+    such as Employees.
+  - **Saved sets:** "Save selection…" keeps a named set of lists (and the All pages choice) in this browser. Pick it
+    from "Saved sets" to tick the same lists again.
+  - It only reads. It works for read-only roles.
+- **Production guard:** in Production, every delete and every run of 20 items or more asks you to type
+  `PRODUCTION` before anything is sent. UAT never asks.
+  - **Change it** in Admin Settings → **Safety** (on / off, and from how many items). The setting is kept in that
+    browser only.
+- **Undo for more tools:** Outpass Policies and Time Off Policy (Timeoff Policy Config) now have "Undo this run" too.
+  - **How:** the undo file holds each changed policy's rows (one per approval level) as "Export for editing" wrote
+    them just before the run. Empty cells are CLEAR, so values the run filled in are emptied again.
+  - **Limit:** uploading it sends the policy as it was, as far as the upload format can say it (the same as uploading
+    an export taken before the run).
+  - **Created policies** can be deleted from the report or the run journal.
+
 ## Admin console (Settings)
 
 The Settings screens open only through the **admin console login**: username `bft.admin` (fixed in `config.js`)
@@ -207,6 +239,8 @@ the screens but is not server-grade security; the real lock is who can commit to
   "Save to this browser" changes only your browser. "Export layout.json" gives a file for the whole team.
 - **Sign-in & audit** — client id/secret and audit webhook for this browser; status: configured / not configured / needs attention.
 - **API explorer** — see above: test, edit, turn off and download any endpoint; send a GET to any Beeforce path.
+- **Tools by role** — roles, their tools, read only, and who has which role (see v3.15 above).
+- **Safety** — the Production guard for this browser.
 - **API endpoints** — every Beeforce call the tools make (method + path), editable as a table. "Import Postman collection" (v2.1)
   checks a collection against the registry: matched (green), check (amber), missing (red — keeps the current URL),
   and file requests that don't fit. Only invalid edits block "Apply & Save". "Download endpoints.json" gives the team file.

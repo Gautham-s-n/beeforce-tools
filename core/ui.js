@@ -16,6 +16,7 @@ function btn(label, o) {
   var b = h('button.btn' + (o.kind ? '.' + o.kind : '') + (o.sm ? '.sm' : ''), { type: 'button', title: o.title, disabled: o.disabled, 'aria-label': o.aria },
     o.icon ? U.icon(o.icon, o.sm ? 16 : 18) : null, label ? h('span', label) : null);
   if (o.reason) setReason(b, o.reason);
+  if (label === 'Delete selected') b.classList.add('delsel');   // v3.15: hidden for a read-only role (.app.ro, core/engine.js)
   if (o.onClick) b.addEventListener('click', function (e) { if (b.getAttribute('aria-disabled') === 'true') return; busy(b, function () { return o.onClick(e); }); });
   return b;
 }
@@ -538,16 +539,38 @@ function codeDialog(title, text, o) {
 }
 
 /* confirm({ title, body, verb, danger }) — always names the environment. */
+/* o.count (v3.15) marks a confirm that sends writes to Beeforce (number of items). Then:
+ *  - a read-only role gets a message instead (nothing is sent);
+ *  - in Production, a run of at least the guard's minimum, or any danger run (delete), asks to type PRODUCTION. */
+var GUARD_WORD = 'PRODUCTION';
+function guardFor(o) {
+  if (o.count == null || ctx.Api.state.env !== 'production') return null;
+  var g = ctx.Engine && ctx.Engine.guardSettings ? ctx.Engine.guardSettings() : { on: true, min: 20 };
+  return g.on && (o.danger || o.count >= g.min) ? GUARD_WORD : null;
+}
 function confirm(o) {
   var uat = ctx.Api.state.env === 'uat';
+  if (o.count != null && ctx.READONLY) { toast('Your APIary role is read only: nothing was sent.', 'bad'); return Promise.resolve(false); }
+  var word = guardFor(o);
   return dialog(function (box, close) {
+    var go = h('button.btn.' + (o.danger ? 'danger' : 'primary'), { type: 'button', onclick: function () { if (!go.disabled) close(true); } }, o.verb || 'Continue');
+    var typed = null;
+    if (word) {
+      typed = input({ placeholder: word });
+      typed.setAttribute('aria-label', 'Type ' + word + ' to confirm');
+      typed.autocomplete = 'off'; typed.spellcheck = false; typed.classList.add('guardin');
+      go.disabled = true;
+      typed.addEventListener('input', function () { go.disabled = typed.value.trim().toUpperCase() !== word; });
+      typed.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !go.disabled) { e.preventDefault(); close(true); } });
+    }
     U.append(box, [
       h('h2', o.title || 'Are you sure?'),
       h('div.envbox' + (uat ? '.uat' : ''), U.icon('shield', 20), h('div', h('span.muted.small', 'This changes data in'), h('br'), h('b', ctx.Api.envLabel()))),
       o.body ? (o.body instanceof Node ? o.body : h('p.muted', o.body)) : null,
+      word ? h('div.guard', h('label.small', 'This is ' + ctx.Api.envLabel() + (o.danger ? ' and it deletes data' : ' and ' + o.count + ' items') + '. Type ', h('b', word), ' to continue.'), typed) : null,
       h('div.acts',
         h('button.btn.quiet', { type: 'button', onclick: function () { close(false); } }, 'Cancel'),
-        h('button.btn.' + (o.danger ? 'danger' : 'primary'), { type: 'button', onclick: function () { close(true); } }, o.verb || 'Continue'))
+        go)
     ]);
   }).then(function (v) { return v === true; });
 }

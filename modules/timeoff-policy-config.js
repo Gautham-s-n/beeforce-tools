@@ -182,6 +182,16 @@ function positional(file) {
   });
 }
 function isClear(v) { return /^clear$/i.test(s(v)); }
+
+/* Undo (v3.15): the policy's rows exactly as "Export for editing" writes them, taken before the run. Every empty cell
+ * becomes CLEAR, so a value the run filled in is emptied again; uploading the rows sends the policy as it was. */
+function undoRowsOf(id, curRows) {
+  return curRows.map(function (r) {
+    var out = [];
+    for (var i = 0; i < HEADERS.length; i++) { var v = i === 0 ? id : X.fmt(r[i]); v = v == null ? '' : v; out.push(i > 0 && s(v) === '' ? 'CLEAR' : v); }
+    return out;
+  });
+}
 /* Blank cells on an update keep the current value: policy columns from the current policy, level columns from the
  * current approval level with the same "Approval Level" number. A cell with CLEAR is sent empty (as engine.entity()). */
 function mergeBlanks(row, curRows, levelKey) {
@@ -285,7 +295,7 @@ function makeParse() {
           it.changes = diffVsCurrent(cur, p);
           if (!it.changes.length) { it.kind = 'same'; items.push(it); return; }
           if (p.paycode.id == null) { it.kind = 'bad'; it.error = 'Paycode ID is required'; items.push(it); return; }
-          it.kind = 'upd'; it.payload = p;
+          it.kind = 'upd'; it.payload = p; it.undoRows = undoRowsOf(g.id, curRows); it.undoHeaders = HEADERS;
           it.run = function () { return ctx.EP.call('timeoff-policy-config.update', { id: g.id }, { body: p, module: MOD }); };
         } else {
           it.label = g.name;
@@ -318,9 +328,9 @@ function browse(bodyEl) {
     var delBtn = UI.btn('Delete selected', { icon: 'trash', kind: 'quiet', sm: true }); delBtn.disabled = true;
     var tbl = UI.table([{ key: 'id', label: 'Id' }, { key: 'name', label: 'Name' }, { key: 'description', label: 'Description' }, { key: 'paycode', label: 'Paycode' },
       { key: 'levels', label: 'Levels' }, { key: 'approvers', label: 'Approvers', wrap: true }, { key: 'usage', label: 'Usage limit' }], rows, {
-      select: true,
+      select: !ctx.READONLY,
       onSelect: function (sel) { delBtn.disabled = !sel.size; U.swap(delBtn, U.icon('trash', 16), h('span', sel.size ? 'Delete ' + sel.size : 'Delete selected')); },
-      toolbar: [UI.btn('Refresh', { icon: 'retry', sm: true, kind: 'quiet', onClick: draw }), UI.btn('Export for editing', { icon: 'download', sm: true, onClick: function () { return template(true); } }), delBtn]
+      toolbar: [UI.btn('Refresh', { icon: 'retry', sm: true, kind: 'quiet', onClick: draw }), UI.btn('Export for editing', { icon: 'download', sm: true, onClick: function () { return template(true); } }), ctx.READONLY ? null : delBtn]
     });
     delBtn.onclick = function () {
       var todo = Array.from(tbl.selected).map(function (id) {
@@ -340,7 +350,7 @@ ctx.defineTool('timeoff-policy-config', {
     view.appendChild(UI.tabs([
       { id: 'upload', label: 'Create / update', render: function (b) {
         b.appendChild(E.uploadFlow({
-          module: MOD, template: function () { return template(false); }, parse: makeParse(), itemLabel: 'Policy', verb: 'policy change',
+          module: MOD, removeEp: 'timeoff-policy-config.remove', template: function () { return template(false); }, parse: makeParse(), itemLabel: 'Policy', verb: 'policy change',
           blankNote: function () { return 'Blank cells keep the current value in ' + Api.envLabel() + ' (level columns from the level with the same Approval Level). To empty a value, type CLEAR in the cell. Some values are always sent the same way — Approver Type ATTRIBUTE, allowEdit off, TAT Action APPROVE when empty, Past Signed Off Periods at least 1 — and the list shows them when they differ from ' + Api.envLabel() + '.'; },
           intro: h('div.note.info', h('div',
             h('b', 'One row per approval level. '), 'Leave id blank to create; fill it to update. Rows with the same id (or Name, for new policies) become one policy. ',

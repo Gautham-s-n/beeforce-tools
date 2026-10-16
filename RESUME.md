@@ -1,4 +1,4 @@
-# Resume point — APIary (BeeForce Tools v3) (updated 2026-10-15)
+# Resume point — APIary (BeeForce Tools v3) (updated 2026-10-16)
 
 ## Done
 - Core (shell, engine, UI kit, Excel, API, audit) and all tools ported (26 tools in 8 areas).
@@ -247,6 +247,39 @@ v3.6.1 ("I especially hated how the three buttons — Arrange, etc. — were dis
 - **Not done:** the tool generator (Tier 3 #8). API Automation already runs any endpoint from a sheet; a generator
   needs per-endpoint field metadata that the registry doesn't have.
 - **Test:** t_v314.py.
+
+## v3.15.0 (2026-10-16) — read-only roles, Data Export, Production guard, undo for two more tools
+- The user asked to build the proposals that fit. Picked: the approved read-only export for colleagues, saved
+  extractions, a Production guard, and undo for more tools. "Retry failed rows" already existed (Report → Retry N
+  failed), so nothing was built for it. Compare for the policy tools was not built: their rows are one per approval
+  level, which compareTab does not handle.
+- **core/layout.js:** `access.readOnly` (role names) kept by `cleanAccess`; `isReadOnly(role)`; `build()` sets
+  `ctx.READONLY`.
+- **core/engine.js:**
+  - `Api.call` wrapper (installed once): with `ctx.READONLY`, any method other than GET returns
+    `{ ok:false, status:0, text: RO_TEXT }` without a request, except `READ_POSTS`
+    (`employee-bulk-create.org-level-entries-next`). Without read only, the original `Api.call` runs with the same
+    arguments.
+  - `runQueue` sends nothing for a read-only role (covers roles.js, which uses its own fetch).
+  - `uploadFlow` step 1 shows `readOnlyNote()` instead of the drop zone; `stepApply` and `runDeletes` refuse;
+    entity browse hides Delete.
+  - `guardSettings()` (`bft.prodGuard` = { on, min }, default on / 20); confirm calls pass `count`.
+  - `undoOf` also takes `it.undoRows` + `it.undoHeaders` (several rows per record); the undo summary counts records.
+  - CSS: `.guard`, `.app.ro .btn.delsel`, `.app.ro .envpill::after` ("Read only").
+- **core/ui.js:** `UI.confirm` with `o.count` (= sends writes): read-only → toast and false; Production + guard on +
+  (danger or count ≥ min) → type PRODUCTION (button off until typed; Enter confirms). `btn('Delete selected')` gets
+  class `delsel`.
+- **core/shell.js:** `markAdmin` toggles `.app.ro`; Tools by role has a "Read only" tick per role (rename / remove keep
+  `readOnly` in step); new admin tab **Safety** (`ctx.ADMIN_TABS`, so admin-settings.js stays v3.7.0).
+- **modules/data-export.js** (new, Automation): datasets = registry GETs without placeholders, one per path (projection
+  FULL preferred), "Get …" / "Find …" lookups left out; Excel (one sheet per list + About), CSV / JSON per list; All
+  pages (page/size 200, stops like the API explorer); saved sets in `bft.extractions`.
+- **outpass-policies.js / timeoff-policy-config.js:** `undoRowsOf(id, curRows)` (export rows, empty → CLEAR),
+  `removeEp`, Delete hidden for read only.
+- **playbooks.js, tasks.js, api-automation.js:** `count` on their write confirms (guard + read only).
+- **index.js:** `data-export` in Automation; **config.js:** VERSION only.
+- **Rig:** `rig.launch` sets `bft.prodGuard` off unless `BFT_PRODGUARD=on`, so the older suites click through as
+  before; t_v315.py covers the guard. New: t_v315.py, mkro.py, run315.sh, runlvl314.sh, runall315.sh.
 
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).

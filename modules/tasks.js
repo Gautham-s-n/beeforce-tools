@@ -54,7 +54,7 @@ function labelOf(t) { var d = parseDesc(t.description); return t.id + ' · ' + t
 /* Approve selected rows from the list: confirm, then progress in a dialog. */
 async function approveNow(todo) {
   var list = h('div.muted.small', { style: { maxHeight: '140px', overflow: 'auto' } }, todo.slice(0, 40).map(function (t) { return h('div', t.label); }), todo.length > 40 ? h('div', '… and ' + (todo.length - 40) + ' more') : null);
-  if (!(await UI.confirm({ title: 'Approve ' + todo.length + ' task' + (todo.length > 1 ? 's' : '') + '?', body: h('div', h('p.muted', 'Each task is completed as approved.'), list), verb: 'Approve ' + todo.length }))) return null;
+  if (!(await UI.confirm({ title: 'Approve ' + todo.length + ' task' + (todo.length > 1 ? 's' : '') + '?', body: h('div', h('p.muted', 'Each task is completed as approved.'), list), verb: 'Approve ' + todo.length, count: todo.length }))) return null;
   ctx.Audit.newTransaction();
   var res;
   await UI.dialog(function (box, close) {

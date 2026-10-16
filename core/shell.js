@@ -1649,7 +1649,7 @@ function openTool(id) {
 }
 
 function openDev(id) { return ctx.loadTool('dev-panel').then(function (d) { d.open(id); }); }
-function markAdmin() { if (ctx.appEl) ctx.appEl.classList.toggle('admin', ctx.Layout.isAdmin()); }
+function markAdmin() { if (ctx.appEl) { ctx.appEl.classList.toggle('admin', ctx.Layout.isAdmin()); ctx.appEl.classList.toggle('ro', !!ctx.READONLY); } }
 
 /* ---------------- hover peek + tips ---------------- */
 function showPeek(a, cell) {
@@ -2084,6 +2084,7 @@ function rolesTab(el) {
         if (draft.roles[n]) { UI.toast('A role called “' + n + '” already exists.', 'bad'); name.value = r; return; }
         draft.roles[n] = draft.roles[r]; delete draft.roles[r];
         Object.keys(draft.users).forEach(function (u) { if (draft.users[u] === r) draft.users[u] = n; });
+        if (draft.readOnly) draft.readOnly = draft.readOnly.map(function (x) { return x === r ? n : x; });
         draw();
       });
       var groups = areas.filter(function (a) { return a.tools.length; }).map(function (a) {
@@ -2093,9 +2094,16 @@ function rolesTab(el) {
           return c;
         })));
       });
+      var ro = UI.check('Read only — browse and export, no changes', !!(draft.readOnly && draft.readOnly.indexOf(r) >= 0));
+      ro.classList.add('rocheck');
+      ro.input.addEventListener('change', function () {
+        var l = (draft.readOnly || []).filter(function (x) { return x !== r; });
+        if (ro.input.checked) l.push(r);
+        if (l.length) draft.readOnly = l; else delete draft.readOnly;
+      });
       return h('div.card', { style: { marginBottom: '12px' } },
-        h('div.row', { style: { alignItems: 'center', marginBottom: '10px' } }, h('b', 'Role'), name, h('span', { style: { flex: 1 } }),
-          UI.btn('Remove role', { sm: true, kind: 'quiet', icon: 'trash', onClick: function () { delete draft.roles[r]; Object.keys(draft.users).forEach(function (u) { if (draft.users[u] === r) delete draft.users[u]; }); draw(); } })),
+        h('div.row', { style: { alignItems: 'center', marginBottom: '10px' } }, h('b', 'Role'), name, ro, h('span', { style: { flex: 1 } }),
+          UI.btn('Remove role', { sm: true, kind: 'quiet', icon: 'trash', onClick: function () { delete draft.roles[r]; Object.keys(draft.users).forEach(function (u) { if (draft.users[u] === r) delete draft.users[u]; }); if (draft.readOnly) { draft.readOnly = draft.readOnly.filter(function (x) { return x !== r; }); if (!draft.readOnly.length) delete draft.readOnly; } draw(); } })),
         groups);
     });
     var users = UI.textarea({ value: usersText(), placeholder: 'ops.user = support\n* = support' });
@@ -2105,7 +2113,8 @@ function rolesTab(el) {
     roleSel.style.maxWidth = '200px';
     U.swap(holder,
       UI.note('info', 'Which tools each colleague sees', 'Give each role the tools it should show, then say which Beeforce username has which role (“*” = everyone else). People without a role see every tool; unlocked admins always see everything. ' +
-        'This only changes what APIary shows — what an account may change in Beeforce is still decided by Beeforce.'),
+        'A read-only role can open its tools, browse and export, but APIary sends no changes for it. ' +
+        'This only changes what APIary does — what an account may change in Beeforce is still decided by Beeforce.'),
       team ? null : UI.note('warn', null, 'The team layout has no roles yet: everyone sees every tool.'),
       cards.length ? cards : UI.empty('No roles yet.'),
       h('div.row', { style: { margin: '4px 0 16px' } }, UI.btn('Add role', { icon: 'plus', onClick: function () { var n = 'role ' + (Object.keys(draft.roles).length + 1); draft.roles[n] = []; draw(); } })),
@@ -2124,6 +2133,30 @@ function rolesTab(el) {
         } })));
   }
   draw();
+}
+
+/* ---------------- Admin Settings → Safety (v3.15) ----------------
+ * The Production guard for this browser: in Production, a run of at least N items, or any delete, asks the person to
+ * type PRODUCTION first (UI.confirm with count). Saved in this browser only (bft.prodGuard). */
+ctx.ADMIN_TABS.push({ id: 'safety', label: 'Safety', render: safetyTab });
+function safetyTab(el) {
+  var g = ctx.Engine.guardSettings(), d = ctx.Engine.GUARD_DEFAULT;
+  var on = UI.check('Ask to type PRODUCTION before big runs and deletes in Production', g.on);
+  var min = UI.input({ value: String(g.min) }); min.inputMode = 'numeric'; min.style.maxWidth = '120px';
+  var err = h('div.err');
+  U.append(el, [
+    UI.note('info', 'Production guard', 'In Production, every delete and every run of at least the number below asks the person to type PRODUCTION before anything is sent. UAT never asks. This setting is kept in this browser only.'),
+    h('div', { style: { margin: '8px 0 12px' } }, on),
+    UI.field('Ask from this many items (deletes always ask)', min), err,
+    h('div.row', { style: { marginTop: '12px' } },
+      UI.btn('Save', { kind: 'primary', icon: 'check', onClick: function () {
+        var n = parseInt(String(min.value).trim(), 10);
+        if (!(n >= 1 && n <= 100000)) { err.textContent = 'Enter a whole number from 1 to 100000.'; return; }
+        err.textContent = '';
+        U.store.set('prodGuard', { on: on.input.checked, min: n });
+        UI.toast(on.input.checked ? 'Production guard on: from ' + n + ' items, and for every delete.' : 'Production guard off in this browser.', on.input.checked ? 'ok' : 'warn');
+      } }),
+      UI.btn('Back to default', { kind: 'quiet', onClick: function () { try { localStorage.removeItem('bft.prodGuard'); } catch (e) {} on.input.checked = d.on; min.value = String(d.min); err.textContent = ''; UI.toast('Production guard back to the default: on, from ' + d.min + ' items.'); } }))]);
 }
 
 ctx.Shell = {

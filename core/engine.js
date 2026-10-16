@@ -24,6 +24,45 @@ var KIND = {
 function applicable(it) { return it.kind === 'new' || it.kind === 'upd' || it.kind === 'del' || it.kind === 'act'; }
 
 /* =========================================================
+ * Read-only roles (v3.15). A role listed in layout.json access.readOnly (core/layout.js sets ctx.READONLY) can open
+ * its tools, browse and export, but APIary sends no write for it:
+ *  - every call through Api.call other than GET is refused before it leaves the browser (the few POSTs that only read,
+ *    READ_POSTS, still go through);
+ *  - runQueue sends nothing (this also covers tools that send their own requests, such as Roles & Positions);
+ *  - upload flows show a note instead of the drop zone, and Delete buttons are hidden.
+ * When the role is not read-only nothing changes: the original Api.call runs with the same arguments.
+ * This is a guard rail in APIary, not a permission: Beeforce still decides what an account may change.
+ * ========================================================= */
+var RO_TEXT = 'Not sent: your APIary role is read only.';
+var READ_POSTS = ['employee-bulk-create.org-level-entries-next'];
+function readOnly() { return !!ctx.READONLY; }
+function readPost(method, path) {
+  if (String(method).toUpperCase() !== 'POST') return false;
+  var p = String(path || '').replace(/^https?:\/\/[^/]+/, '').split('?')[0];
+  return READ_POSTS.some(function (k) { try { return ctx.EP.path(k) === p; } catch (e) { return false; } });
+}
+(function () {
+  var inner = Api.call;
+  Api.call = function (method, path) {
+    if (ctx.READONLY && String(method).toUpperCase() !== 'GET' && !readPost(method, path)) return Promise.resolve({ ok: false, status: 0, data: null, text: RO_TEXT });
+    return inner.apply(this, arguments);
+  };
+})();
+function readOnlyNote() {
+  return UI.note('info', 'Read only', 'Your APIary role can read and export, but not change data. Use Browse & export (or the Data Export tool) to get data. Ask the APIary admin if you need to make changes.');
+}
+
+/* Production guard (v3.15): in Production, a run of many items, or any delete, asks you to type PRODUCTION first.
+ * Settings for this browser (Admin Settings → Safety): bft.prodGuard = { on: true, min: 20 }. */
+var GUARD_DEFAULT = { on: true, min: 20 };
+function guardSettings() {
+  var g = U.store.get('prodGuard', null);
+  var on = g && typeof g.on === 'boolean' ? g.on : GUARD_DEFAULT.on;
+  var min = g && typeof g.min === 'number' && g.min >= 1 && g.min <= 100000 ? Math.floor(g.min) : GUARD_DEFAULT.min;
+  return { on: on, min: min };
+}
+
+/* =========================================================
  * Run journal (v3.13). Every run (apply, retry, delete) is kept in this browser for this site, in IndexedDB
  * ("apiary" / "runs"): who, environment, tool, file name + SHA-256, every item with its result, every request with its
  * response (bodies shortened), and the undo data. The newest 300 runs are kept. Nothing leaves the browser unless you
@@ -108,28 +147,33 @@ function saveRun(o) {
  * (the upload headers, id first). The undo file holds those old values in the tool's own upload format: changed fields
  * that were empty before get CLEAR, everything else is the old value. Records created by the run can be deleted again
  * when the tool names its delete endpoint (cfg.removeEp). */
+/* v3.15: tools that send one record from several rows (one row per approval level, read by column position) give
+ * it.undoRows instead: the record's rows as "Export for editing" writes them, taken just before the run, with
+ * it.undoHeaders. Uploading those rows sends the record as it was, as far as the tool's upload format can say it. */
 function undoOf(okItems, removeEp) {
-  var upd = okItems.filter(function (it) { return it.kind === 'upd' && it.before && it.undoCols; });
-  var cols = upd.length ? upd[0].undoCols : null;
-  var rows = upd.map(function (it) {
+  var upd = okItems.filter(function (it) { return it.kind === 'upd' && ((it.before && it.undoCols) || (it.undoRows && it.undoHeaders)); });
+  var cols = upd.length ? (upd[0].undoHeaders || upd[0].undoCols) : null;
+  var rows = [];
+  upd.forEach(function (it) {
+    if (it.undoRows) { it.undoRows.forEach(function (r) { rows.push(r.slice()); }); return; }
     var ch = {}; (it.changes || []).forEach(function (c) { ch[c.field] = 1; });
-    return cols.map(function (k, i) {
+    rows.push(cols.map(function (k, i) {
       if (i === 0) return it.ref;
       var v = X.fmt(it.before[k]); v = v == null ? '' : v;
       return X.str(v) === '' && ch[k] ? 'CLEAR' : v;
-    });
+    }));
   });
   var created = removeEp ? okItems.filter(function (it) { return it.kind === 'new' && it.result && it.result.id !== '' && it.result.id != null; })
     .map(function (it) { return { id: it.result.id, label: it.label || '' }; }) : [];
   if (!rows.length && !created.length) return null;
-  return { headers: cols, rows: rows, created: created, removeEp: removeEp || null };
+  return { headers: cols, rows: rows, records: upd.length, created: created, removeEp: removeEp || null };
 }
 function undoFile(u, tool, envLabel) {
   var sheets = [];
   if (u.rows.length) sheets.push({ name: 'Undo', headers: u.headers, rows: u.rows, tabColor: 'B57A00' });
   if (u.created.length) sheets.push({ name: 'Created_by_run', headers: ['id', 'item'], rows: u.created.map(function (c) { return [c.id, c.label]; }) });
   sheets.push({ name: 'How_to_undo', headers: ['Step'], rows: [
-    ['Old values of ' + u.rows.length + ' updated record(s) in ' + envLabel + ' (' + tool + ').'],
+    ['Old values of ' + (u.records != null ? u.records : u.rows.length) + ' updated record(s) in ' + envLabel + ' (' + tool + ')' + (u.records != null && u.records !== u.rows.length ? ', in ' + u.rows.length + ' rows' : '') + '.'],
     ['Upload this file in ' + tool + ' → Create / update. You see the review first; nothing is sent before Apply.'],
     u.created.length ? [u.created.length + ' record(s) were created by the run. Delete them from the run journal or the report ("Delete created records").'] : ['No records were created by the run.']] });
   return X.download(String(tool).replace(/\W+/g, '_').toLowerCase() + '_undo_' + U.stamp() + '.xlsx', sheets);
@@ -145,6 +189,12 @@ async function runQueue(panel, items, opts) {
   opts = opts || {};
   var ok = [], failed = [];
   var total = items.length;
+  if (readOnly()) {
+    panel.log(RO_TEXT + ' ' + total + ' item(s) not sent.', 'w');
+    items.forEach(function (it) { it.result = { ok: false, status: '', msg: RO_TEXT }; failed.push(it); });
+    panel.set(total, total, '0 ok · ' + failed.length + ' not sent');
+    return { ok: ok, failed: failed };
+  }
   for (var i = 0; i < items.length; i++) {
     while (panel.ctrl.paused && !panel.ctrl.stopped) await U.sleep(200);
     if (panel.ctrl.stopped) { panel.log('Stopped. ' + (total - i) + ' item(s) not sent.', 'w'); items.slice(i).forEach(function (it) { it.result = { ok: false, status: '', msg: 'Not sent (stopped)' }; failed.push(it); }); break; }
@@ -383,6 +433,10 @@ function uploadFlow(cfg) {
         { icon: 'download', label: 'Excel (.xlsx)', sub: 'Every sheet, with reference data', right: 'default', onClick: function () { UI.busy(tplBtn.firstChild, cfg.template); } },
         { icon: 'download', label: 'CSV (.csv)', sub: 'The upload sheet only', onClick: function () { templateCsv().catch(function (e) { UI.toast(e.message, 'bad'); }); } }], 'Download template');
     }
+    if (readOnly()) {
+      U.swap(body, readOnlyNote(), cfg.intro ? (cfg.intro instanceof Node ? cfg.intro : UI.note('info', null, cfg.intro)) : null, tplBtn ? h('div.row', tplBtn) : null);
+      return;
+    }
     var dz = UI.drop({
       onFile: async function (f) {
         var hash = await fileHash(f);
@@ -517,10 +571,11 @@ function uploadFlow(cfg) {
     todo = todo.filter(function (it) { return applicable(it) && !done[it.__id]; });   // never re-send an applied row
     var n = todo.length;
     if (!n) { UI.toast('Nothing left to apply.'); return; }
+    if (readOnly()) { UI.toast(RO_TEXT, 'bad'); return; }
     var nn = todo.filter(function (i) { return i.kind === 'new'; }).length, nu = todo.filter(function (i) { return i.kind === 'upd'; }).length, nd = todo.filter(function (i) { return i.kind === 'del'; }).length;
     var parts = [];
     if (nn) parts.push(nn + ' new'); if (nu) parts.push(nu + ' update' + (nu > 1 ? 's' : '')); if (nd) parts.push(nd + ' delete' + (nd > 1 ? 's' : ''));
-    var ok = await UI.confirm({ title: 'Apply ' + n + ' ' + (cfg.verb || 'change') + (n === 1 ? '' : 's') + '?', body: (parts.join(', ') || n + ' item(s)') + (cfg.module ? ' in ' + cfg.module + '.' : '.'), verb: 'Apply ' + n, danger: nd > 0 });
+    var ok = await UI.confirm({ title: 'Apply ' + n + ' ' + (cfg.verb || 'change') + (n === 1 ? '' : 's') + '?', body: (parts.join(', ') || n + ' item(s)') + (cfg.module ? ' in ' + cfg.module + '.' : '.'), verb: 'Apply ' + n, danger: nd > 0, count: n });
     if (!ok) return;
     ctx.Audit.newTransaction();
     var panel = UI.runPanel('Applying ' + n + ' ' + (cfg.verb || 'change') + (n === 1 ? '' : 's') + ' to ' + Api.envLabel());
@@ -563,7 +618,7 @@ function uploadFlow(cfg) {
     var env = Api.state.env, envLabel = Api.envLabel();
     var main = UI.btn('Undo this run', { icon: 'retry', kind: 'quiet', onClick: function () { return u.rows.length ? undoFile(u, cfg.module || 'Tool', envLabel) : deleteCreated(u, cfg.module || 'Tool', env); } });
     return UI.splitBtn(main, [{ header: 'Put things back as they were' },
-      u.rows.length ? { icon: 'download', label: 'Download undo file', sub: u.rows.length + ' updated record(s): old values in this tool’s upload format. Upload it here to review the undo.', onClick: function () { return undoFile(u, cfg.module || 'Tool', envLabel); } } : null,
+      u.rows.length ? { icon: 'download', label: 'Download undo file', sub: (u.records != null ? u.records : u.rows.length) + ' updated record(s): old values in this tool’s upload format. Upload it here to review the undo.', onClick: function () { return undoFile(u, cfg.module || 'Tool', envLabel); } } : null,
       u.created.length ? { icon: 'trash', label: 'Delete ' + u.created.length + ' created record' + (u.created.length === 1 ? '' : 's') + '…', sub: 'Asks first', danger: true, onClick: function () { return deleteCreated(u, cfg.module || 'Tool', env); } } : null].filter(Boolean), 'Undo this run');
   }
 
@@ -722,21 +777,22 @@ function entity(view, cfg) {
       var rows = recs.map(function (r) { var f = cfg.flatten(r, refs); f.id = r.id; f.__rec = r; return f; });
       var delBtn = UI.btn('Delete selected', { icon: 'trash', kind: 'quiet', sm: true });
       delBtn.disabled = true;
+      var canDel = cfg.canDelete !== false && !readOnly();
       var tbl = UI.table(show, rows, {
-        select: cfg.canDelete !== false, rowKey: function (r) { return String(r.id); }, label: cap(noun) + 's',
+        select: canDel, rowKey: function (r) { return String(r.id); }, label: cap(noun) + 's',
         rowMenu: function (r) {
           var id = String(r.id), name = cfg.labelOf ? cfg.labelOf(r) : id;
           return [{ header: name + ' · id ' + id },
             { icon: 'copy', label: 'Copy id', onClick: function () { UI.copy(id, 'Id'); } },
             { icon: 'code', label: 'Show JSON', sub: 'As read from ' + Api.envLabel(), onClick: function () { UI.codeDialog(cap(noun) + ' ' + id + ' · JSON', JSON.stringify(r.__rec, null, 2), { what: 'JSON', filename: mod.replace(/\W+/g, '_').toLowerCase() + '_' + id + '.json', mime: 'application/json', note: 'Read from ' + Api.envLabel() + '. Copying or downloading sends nothing.' }); } },
-            cfg.canDelete !== false ? 'hr' : null,
-            cfg.canDelete !== false ? { icon: 'trash', label: 'Delete…', danger: true, onClick: function () { runDeletes([{ kind: 'del', ref: id, label: name + ' (id ' + id + ')', run: function () { return remove(id); } }], mod, noun).then(function (x) { if (x) draw(true); }); } } : null];
+            canDel ? 'hr' : null,
+            canDel ? { icon: 'trash', label: 'Delete…', danger: true, onClick: function () { runDeletes([{ kind: 'del', ref: id, label: name + ' (id ' + id + ')', run: function () { return remove(id); } }], mod, noun).then(function (x) { if (x) draw(true); }); } } : null];
         },
         onSelect: function (s) { delBtn.disabled = !s.size; U.swap(delBtn, U.icon('trash', 16), h('span', s.size ? 'Delete ' + s.size : 'Delete selected')); },
         toolbar: [
           UI.btn('Refresh', { icon: 'retry', sm: true, kind: 'quiet', onClick: function () { return draw(true); } }),
           exportButton(function () { return template(true); }),
-          cfg.canDelete !== false ? delBtn : null
+          canDel ? delBtn : null
         ]
       });
       delBtn.onclick = function () {
@@ -763,8 +819,9 @@ function entity(view, cfg) {
 /* Confirm + run deletes, shown in a dialog with progress. Returns the results or null if cancelled. */
 async function runDeletes(todo, mod, noun) {
   if (!todo.length) return null;
+  if (readOnly()) { UI.toast(RO_TEXT, 'bad'); return null; }
   var list = h('div.muted.small', { style: { maxHeight: '140px', overflow: 'auto' } }, todo.slice(0, 40).map(function (t) { return h('div', '• ' + t.label); }), todo.length > 40 ? h('div', '… and ' + (todo.length - 40) + ' more') : null);
-  var ok = await UI.confirm({ title: 'Delete ' + todo.length + ' ' + noun + (todo.length > 1 ? 's' : '') + '?', body: h('div', h('p.muted', 'This cannot be undone.'), list), verb: 'Delete ' + todo.length, danger: true });
+  var ok = await UI.confirm({ title: 'Delete ' + todo.length + ' ' + noun + (todo.length > 1 ? 's' : '') + '?', body: h('div', h('p.muted', 'This cannot be undone.'), list), verb: 'Delete ' + todo.length, danger: true, count: todo.length });
   if (!ok) return null;
   ctx.Audit.newTransaction();
   var res;
@@ -1026,8 +1083,12 @@ function compareTab(cfg) {
 
 ctx.CSS += '\n' + [
   '.dlg.wide{width:min(1100px,96vw);max-height:90vh;overflow:auto}',
-  '.dlg.wide .twrap{max-height:42vh}'
+  '.dlg.wide .twrap{max-height:42vh}',
+  '.guard{margin:12px 0}.guard label{display:block;margin:0 0 6px}.guard .input{max-width:260px;font-family:var(--mono);letter-spacing:.06em}',
+  '.app.ro .btn.delsel{display:none}',
+  '.app.ro .envpill::after{content:"Read only";margin-left:8px;padding:1px 6px;border:1px solid currentColor;border-radius:3px;font-size:11px;font-weight:600;opacity:.85}'
 ].join('\n');
 
 ctx.Engine = { ERR_COLS: ERR_COLS, exportButton: exportButton, runQueue: runQueue, uploadFlow: uploadFlow, entity: entity, runDeletes: runDeletes, reportSheet: reportSheet, applicable: applicable, same: same,
-  Journal: Journal, openJournal: openJournal, runAndRecord: runAndRecord, capture: capture, captureSheets: captureSheets, fileHash: fileHash, compareTab: compareTab, withOther: withOther, undoFile: undoFile };
+  Journal: Journal, openJournal: openJournal, runAndRecord: runAndRecord, capture: capture, captureSheets: captureSheets, fileHash: fileHash, compareTab: compareTab, withOther: withOther, undoFile: undoFile,
+  readOnly: readOnly, readOnlyNote: readOnlyNote, guardSettings: guardSettings, GUARD_DEFAULT: GUARD_DEFAULT, READ_POSTS: READ_POSTS };
