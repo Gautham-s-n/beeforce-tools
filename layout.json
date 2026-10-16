@@ -1,5 +1,82 @@
 {
-  "version": 1,
-  "areas": {},
-  "tools": {}
+  "version": 2,
+  "modules": {},
+  "areas": {
+    "attendance": {
+      "pos": [
+        0,
+        -1
+      ],
+      "ring": [
+        "workflow-transfer",
+        "timecard-update",
+        "ot-approval",
+        "tasks",
+        "",
+        "punch"
+      ]
+    },
+    "pay": {
+      "pos": [
+        1,
+        0
+      ]
+    },
+    "shifts": {
+      "pos": [
+        -1,
+        0
+      ]
+    },
+    "accruals": {
+      "pos": [
+        2,
+        0
+      ]
+    },
+    "timeoff": {
+      "pos": [
+        2,
+        -1
+      ]
+    },
+    "policies": {
+      "name": "Outpass",
+      "pos": [
+        1,
+        1
+      ]
+    },
+    "people": {
+      "pos": [
+        1,
+        -1
+      ]
+    },
+    "automation": {
+      "pos": [
+        -1,
+        1
+      ]
+    }
+  },
+  "tools": {},
+  "access": {
+    "roles": {},
+    "users": {},
+    "allowedUsers": [
+      "lntbtadmin",
+      "sttbtadmin",
+      "bte544wil"
+    ],
+    "approval": true,
+    "devices": {
+      "DDBP-Y5D7": {
+        "name": "Admin",
+        "user": "lntbtadmin",
+        "role": "",
+        "at": "2026-10-16"
+      }
+    }
+  }
 }
