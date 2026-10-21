@@ -1195,6 +1195,7 @@ ctx.CSS += '\n' + [
   '.plainerr{margin:6px 0;color:var(--bad)}',
   '.rolefold svg{transition:transform .15s}.rolefold:not(.on) svg{transform:rotate(-90deg)}.rolecard .rolebody{margin-top:10px}.rolecount{white-space:nowrap}',
   '.reqpanel .reqcode,.reqpaste{font-family:var(--mono);font-size:12px;word-break:break-all}.reqadmin{margin-top:12px}',
+  '.reqsteps{margin:4px 0 10px}.reqok{display:flex;gap:8px;align-items:center;margin:4px 0;color:var(--ok, #1f7a3a)}.reqhint{margin-top:6px;text-align:center}',
   '.app.ro .envpill::after{content:"Read only";margin-left:8px;padding:1px 6px;border:1px solid currentColor;border-radius:3px;font-size:11px;font-weight:600;opacity:.85}'
 ].join('\n');
 

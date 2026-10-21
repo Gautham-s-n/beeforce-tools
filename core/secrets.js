@@ -4,7 +4,12 @@
  * so each has its own copy). NOT a vault: any script running on the Beeforce page, browser extensions,
  * and anyone using this browser profile can read it. It keeps the values out of the code repository.
  *
- * Shape: { clientId, clientSecret, webhookUrl, webhookState: 'untested'|'ok'|'unconfirmed'|'failed', webhookCheckedAt } */
+ * Shape: { clientId, clientSecret, webhookUrl, webhookState: 'untested'|'ok'|'unconfirmed'|'failed', webhookCheckedAt }
+ *
+ * v3.17 team client: client.json next to index.js ({ version: 1, clientId, clientSecret, webhookUrl? }) is used by
+ * browsers that have no value of their own, so colleagues don't type the client secret. The admin decided to share
+ * it because it is Beeforce's own web-login client (the Beeforce login page sends the same value to everyone).
+ * A value saved in this browser always wins. The repository is public: whatever is in client.json is public. */
 'use strict';
 
 var KEY = 'bft.secrets';
@@ -17,12 +22,25 @@ function write(o) {
   try { localStorage.setItem(KEY, JSON.stringify(o)); return true; } catch (e) { return false; }
 }
 
+/* The team file, checked: anything malformed is ignored (the browser setup is asked for as before). */
+function team() {
+  var t = ctx.repoClient;
+  if (!t || typeof t !== 'object' || typeof t.clientId !== 'string' || typeof t.clientSecret !== 'string' || !t.clientId.trim() || !t.clientSecret) return null;
+  var w = typeof t.webhookUrl === 'string' && WEBHOOK_RE.test(t.webhookUrl.trim()) ? t.webhookUrl.trim() : '';
+  return { clientId: t.clientId.trim(), clientSecret: t.clientSecret, webhookUrl: w };
+}
 var Secrets = {
   get: function () {
-    var s = read();
-    return { clientId: s.clientId || ctx.CONFIG.OAUTH_CLIENT_ID || '', clientSecret: s.clientSecret || '', webhookUrl: s.webhookUrl || '',
-      webhookState: s.webhookState || (s.webhookUrl ? 'untested' : ''), webhookCheckedAt: s.webhookCheckedAt || 0 };
+    var s = read(), t = team() || {};
+    var ownClient = !!(s.clientId && s.clientSecret), useTeam = !s.clientSecret && !!t.clientSecret;
+    var hook = s.webhookUrl || t.webhookUrl || '';
+    return { clientId: (useTeam ? t.clientId : s.clientId) || ctx.CONFIG.OAUTH_CLIENT_ID || '', clientSecret: s.clientSecret || t.clientSecret || '', webhookUrl: hook,
+      webhookState: s.webhookUrl ? (s.webhookState || 'untested') : hook ? 'ok' : '', webhookCheckedAt: s.webhookUrl ? s.webhookCheckedAt || 0 : 0,
+      clientSource: ownClient || s.clientSecret ? 'browser' : useTeam ? 'team' : '', webhookSource: s.webhookUrl ? 'browser' : hook ? 'team' : '' };
   },
+  team: team,
+  /* This browser's own saved values (for building client.json). */
+  own: function () { var s = read(); return { clientId: s.clientId || ctx.CONFIG.OAUTH_CLIENT_ID || '', clientSecret: s.clientSecret || '', webhookUrl: s.webhookUrl || '' }; },
   set: function (patch) {
     var s = read();
     Object.keys(patch).forEach(function (k) { if (patch[k] == null || patch[k] === '') delete s[k]; else s[k] = patch[k]; });

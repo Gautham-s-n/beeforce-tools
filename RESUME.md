@@ -302,6 +302,33 @@ v3.6.1 ("I especially hated how the three buttons — Arrange, etc. — were dis
 - **README:** v3.16 section and "Share APIary with a colleague" (bookmark name `⬢ APIary`).
 - **Rig:** t_v316.py (+ run316.sh, seed_v316.json, runall316.sh).
 
+## v3.17.0 (2026-10-17) — team sign-in client (client.json)
+- The user checked Beeforce UAT's login: `oauth/token` carries `Authorization: Basic` for client id `web-client`, the
+  same for every user, so the secret protects nothing beyond the password. Option (b), reading it from Beeforce's
+  scripts, was dropped as fragile (scripts change on every Beeforce deploy). The user chose (a): share it.
+- **index.js:** fetches optional `client.json` → `ctx.repoClient`.
+- **core/secrets.js:** `team()` (validated client.json: clientId, clientSecret, optional Google Chat webhook);
+  `get()` falls back to it when this browser has no secret / no webhook (browser values win) and reports
+  `clientSource` / `webhookSource`; `own()` = this browser's own values. The team secret is never written to storage.
+- **core/shell.js:** setup panel says when the team client / webhook is used ("Remove webhook" only for a browser
+  webhook — `.btn` display overrode `hidden`, now `style.display`); Access tab → "Sign-in client for the team" with
+  status, public-repo warning, optional webhook, Download client.json.
+- client.json is not in the release pack: the admin builds it in Admin Settings and commits it.
+- **Rig:** t_v317.py (+ run317.sh).
+
+## v3.18.0 (2026-10-17) — friendlier first sign-in
+- Feedback: first sign-in / setup for a new colleague was not friendly. Decisions: fill from the browser-saved
+  password (not the Beeforce tab's session — that would change sign-in); request = clipboard + Chat; check the
+  password first; same-session grant later.
+- **core/shell.js:** sign-in card button = "Request access" when approval is on and this browser is not approved
+  for the typed username (`needsRequest` / `updateGo`, hint `.reqhint`); one click signs in once to check the
+  password, drops the session, `sendRequest` copies the code (clipboard) and posts it to the webhook (own or team),
+  then `requestPanel` shows "Access requested" with ticks (password ok, admin notified, code copied), the code, an
+  optional name, Copy, Back, "I am the APIary admin". Access tab: the approver types a name. `pageEnv()`: the card
+  starts on the environment of the page's own site.
+- **core/engine.js:** CSS for the request card.
+- **Rig:** t_v318.py (+ run318.sh); t_v316 follows the optional name.
+
 ## Open decisions for the user
 - Lookup tables with two columns of the same title: now mapped by position (old tool copied the first column into both).
 - Workflow transfer: "replace" column now really sent (old always sent false because of a header typo).

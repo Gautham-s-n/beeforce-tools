@@ -563,13 +563,18 @@ var Saved = {
     try { navigator.credentials.store(new PasswordCredential({ id: id, password: password, name: id })).catch(function () {}); } catch (e) {}
   }
 };
+/* v3.18: the environment whose site this page is (the bookmark is clicked on the Beeforce site the person uses). */
+function pageEnv() {
+  var envs = ctx.CONFIG.ENVIRONMENTS || {}, host = location.host;
+  return Object.keys(envs).filter(function (k) { try { return new URL(envs[k].url).host === host; } catch (e) { return false; } })[0] || null;
+}
 function showLogin(msg, forceSetup) {
   S.level = 'login';
   var app = ctx.appEl;
   Array.prototype.slice.call(app.children).forEach(function (c) { if (c !== R.toasts && c !== R.dock) c.remove(); });
   R.toolbar = null;
 
-  var env = U.store.get('env', 'production');
+  var env = pageEnv() || U.store.get('env', 'production');
   var deco = h('div.lhex'), mo = motion();
   [[0.14, 0.2, ''], [0.22, 0.42, 'b'], [0.08, 0.62, ''], [0.8, 0.18, ''], [0.88, 0.4, 'y'], [0.74, 0.62, 'b'], [0.9, 0.8, ''], [0.18, 0.84, '']].forEach(function (p, i) {
     var el = h('i' + (p[2] ? '.' + p[2] : ''));
@@ -596,6 +601,12 @@ function showLogin(msg, forceSetup) {
   eye.onclick = function () { pass.type = pass.type === 'password' ? 'text' : 'password'; pass.focus(); };
   var err = h('div.err', { role: 'alert' }, msg || '');
   var go = h('button.btn.primary', { type: 'submit', style: { width: '100%', marginTop: '4px' } }, h('span', 'Sign in'));
+  /* v3.18: on a browser that is not approved yet the button asks for access instead (same click: the password is
+   * checked with Beeforce first, then the request goes to the admin). */
+  var reqHint = h('div.small.muted.reqhint', { hidden: true }, 'First time on this browser: APIary checks your Beeforce password, then asks the APIary admin to let you in.');
+  function needsRequest() { var u = user.value.trim(); return !!u && !ctx.AdminLogin.isAdminUser(u) && ctx.Layout.userAllowed(u) && !ctx.Layout.deviceApproved(u); }
+  function updateGo() { var r = needsRequest(); U.swap(go, h('span', r ? 'Request access' : 'Sign in')); go.classList.toggle('reqbtn', r); reqHint.hidden = !r; }
+  user.addEventListener('input', updateGo);
   // saved password: asked for automatically when the card opens (once per tab if nothing came back), or from the link
   var savedNote = h('div.small.muted.savednote', { role: 'status' });
   var savedLink = Saved.ok() ? h('button.linkbtn.savedpw', { type: 'button', onclick: function () { fetchSaved('required'); } }, 'Use a saved password') : null;
@@ -608,7 +619,7 @@ function showLogin(msg, forceSetup) {
         return;
       }
       if (!card.contains(form) || (mediation === 'optional' && pass.value)) return;   // setup open, or already typing
-      user.value = c.id; pass.value = c.password; filled = true;
+      user.value = c.id; pass.value = c.password; filled = true; updateGo();
       savedNote.textContent = 'Filled from the password your browser saved for ' + location.host + '. Check Production / UAT, then sign in.';
       err.textContent = '';
       go.focus();
@@ -623,19 +634,19 @@ function showLogin(msg, forceSetup) {
     UI.field('Username', user),
     UI.field('Password', h('div.pw', pass, eye)),
     savedLink ? h('div.savedrow', savedLink) : null, savedNote,
-    err, go,
+    err, go, reqHint,
     h('div.lfoot', h('span', 'v' + ctx.CONFIG.VERSION), auditBadge(),
       h('button.linkbtn', { type: 'button', onclick: function () { openSetup(false); } }, 'Sign-in & audit setup')));
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
     err.textContent = '';
     if (!user.value.trim() || !pass.value) { err.textContent = 'Enter your username and password.'; return; }
-    go.disabled = true; U.swap(go, h('span.spin'), h('span', 'Signing in…'));
+    go.disabled = true; U.swap(go, h('span.spin'), h('span', needsRequest() ? 'Checking your password…' : 'Signing in…'));
     try {
       // Admin console login (separate credentials from config.js; never sent anywhere).
       var adm = await ctx.AdminLogin.check(user.value, pass.value);
       if (adm === 'bad-password') { var be = new Error('Wrong admin console password.'); throw be; }
-      if (adm === 'setup') { pass.value = ''; go.disabled = false; U.swap(go, h('span', 'Sign in')); openAdminSetup(); return; }
+      if (adm === 'setup') { pass.value = ''; go.disabled = false; updateGo(); openAdminSetup(); return; }
       if (adm === 'ok') {
         pass.value = '';
         ctx.adminConsole = true;
@@ -654,9 +665,10 @@ function showLogin(msg, forceSetup) {
       if (!ctx.Layout.deviceApproved(su)) {
         var pend = Object.assign({}, Api.state);
         Api.signOut(); pass.value = '';
-        go.disabled = false; U.swap(go, h('span', 'Sign in'));
+        go.disabled = false; updateGo();
+        var sent = await sendRequest(su, env);
         card.classList.add('wide');
-        U.swap(card, requestPanel({ user: su, env: env, pending: pend, onBack: backToLogin }));
+        U.swap(card, requestPanel({ user: su, env: env, pending: pend, onBack: backToLogin, code: sent.code, copied: sent.copied, notified: sent.notified }));
         restart(card);
         return;
       }
@@ -665,7 +677,7 @@ function showLogin(msg, forceSetup) {
     } catch (ex) {
       U.swap(err, ex.message);
       if (ex.code === 'NO_CLIENT' || ex.code === 'BAD_CLIENT') err.appendChild(h('div', h('button.linkbtn', { type: 'button', onclick: function () { openSetup(false); } }, 'Check the sign-in client setup →')));
-      go.disabled = false; U.swap(go, h('span', 'Sign in'));
+      go.disabled = false; updateGo();
       form.animate && !U.reducedMotion() && form.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-6px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(0)' }], { duration: 260 });
     }
   });
@@ -686,6 +698,7 @@ function showLogin(msg, forceSetup) {
     card.classList.add('wide');
     U.swap(card, panel); restart(card);
   }
+  updateGo();
   if (forceSetup || !ctx.Secrets.hasClient()) openSetup(true);
   else {
     setTimeout(function () { if (!filled) (user.value ? pass : user).focus(); }, 50);
@@ -706,12 +719,31 @@ function requestCode(o) {
   var json = JSON.stringify({ v: 1, n: o.name, u: String(o.user).toLowerCase(), d: ctx.Layout.deviceId(), e: o.env, h: location.host, t: new Date().toISOString().slice(0, 10) });
   return 'APIARY-REQ-' + btoa(unescape(encodeURIComponent(json))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
+/* v3.18: one click sends the request. The code is copied to the clipboard and, when an audit webhook is set (own or
+ * team client.json), posted to the admin's Google Chat. */
+async function sendRequest(user, env) {
+  var code = requestCode({ name: '', user: user, env: env });
+  var copied = false, notified = false;
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(code); copied = true; } } catch (e) {}
+  var hook = ctx.Secrets.webhook();
+  if (hook) notified = await new Promise(function (resolve) {
+    try {
+      var x = new XMLHttpRequest();
+      x.open('POST', hook, true); x.setRequestHeader('Content-Type', 'application/json; charset=UTF-8'); x.timeout = 10000;
+      x.onload = function () { resolve(x.status >= 200 && x.status < 300); };
+      x.onerror = function () { resolve('unconfirmed'); };   // usually delivered; the browser may not read Google's reply
+      x.ontimeout = function () { resolve(false); };
+      x.send(JSON.stringify({ text: '🔑 APIary access request\nUser: ' + user + '\nEnvironment: ' + ((ctx.CONFIG.ENVIRONMENTS[env] || {}).label || env) +
+        '\nBrowser: ' + ctx.Layout.deviceId() + '\nSite: ' + location.host + '\n\nPaste this in Admin Settings → Access → Approve a request:\n' + code }));
+    } catch (e) { resolve(false); }
+  });
+  return { code: code, copied: copied, notified: notified };
+}
 function requestPanel(o) {
-  var name = UI.input({ placeholder: 'Your name' }); name.autocomplete = 'name';
-  var code = UI.textarea({ value: '' }); code.readOnly = true; code.rows = 3; code.classList.add('mono', 'reqcode');
-  var copyBtn = UI.btn('Copy request code', { kind: 'primary', icon: 'copy', onClick: function () { if (!name.value.trim()) { UI.toast('Type your name first.', 'bad'); name.focus(); return; } return UI.copy(code.value, 'Request code'); } });
-  function upd() { code.value = name.value.trim() ? requestCode({ name: name.value.trim().slice(0, 60), user: o.user, env: o.env }) : ''; copyBtn.disabled = !name.value.trim(); }
-  name.addEventListener('input', upd); upd();
+  var name = UI.input({ placeholder: 'Your name (optional, helps the admin)' }); name.autocomplete = 'name';
+  var code = UI.textarea({ value: o.code || requestCode({ name: '', user: o.user, env: o.env }) }); code.readOnly = true; code.rows = 3; code.classList.add('mono', 'reqcode');
+  var copyBtn = UI.btn('Copy request code', { kind: o.copied ? 'quiet' : 'primary', icon: 'copy', onClick: function () { return UI.copy(code.value, 'Request code'); } });
+  name.addEventListener('input', function () { code.value = requestCode({ name: name.value.trim().slice(0, 60), user: o.user, env: o.env }); });
   var adminErr = h('div.err');
   var adminPass = UI.input({ type: 'password', placeholder: 'Admin password' }); adminPass.autocomplete = 'current-password';
   var adminBox = h('div.reqadmin', { hidden: true }, UI.field('Admin password', adminPass), adminErr,
@@ -725,13 +757,18 @@ function requestPanel(o) {
       ctx.Audit.startSession(o.user + ' (admin)', Api.envLabel());
       leaveLogin();
     } })));
+  var ok = function (t) { return h('div.reqok', U.icon('check', 16), h('span', t)); };
   return h('div.reqpanel',
     h('div.brand', h('div.mark'), 'APIary'),
-    h('h2', 'Ask for access'),
-    h('p.muted', 'This browser is not approved for ' + o.user + ' yet. Type your name, copy the request code and send it to the APIary admin. When they have approved it, sign in again.'),
-    UI.field('Your name', name),
+    h('h2', 'Access requested'),
+    h('div.reqsteps',
+      ok('Your Beeforce password is correct (' + o.user + ').'),
+      o.notified ? ok(o.notified === true ? 'The APIary admin was notified.' : 'A notification was sent to the APIary admin.') : null,
+      o.copied ? ok('The request code is copied to your clipboard.') : null),
+    h('p.muted', o.notified ? 'If the admin asks for it, paste the code below to them.' : 'Send the request code below to the APIary admin (chat or email).'),
     UI.field('Request code', code),
-    h('div.small.muted', { style: { margin: '2px 0 10px' } }, 'This browser: ' + ctx.Layout.deviceId() + '. The code holds your name, the username, this browser’s code, the environment and today’s date — no password.'),
+    UI.field('Your name', name),
+    h('div.small.muted', { style: { margin: '2px 0 10px' } }, 'When the admin has added you, open the bookmark again and sign in as usual. This browser: ' + ctx.Layout.deviceId() + '. The code holds the username, this browser’s code, the environment and the date — no password.'),
     h('div.row', copyBtn, UI.btn('Back to sign-in', { kind: 'quiet', icon: 'back', onClick: o.onBack }), h('span', { style: { flex: 1 } }),
       ctx.AdminLogin.configured() ? h('button.linkbtn', { type: 'button', onclick: function () { adminBox.hidden = !adminBox.hidden; if (!adminBox.hidden) adminPass.focus(); } }, 'I am the APIary admin') : null),
     adminBox);
@@ -760,13 +797,14 @@ function secretsPanel(o) {
   o = o || {};
   var cur = ctx.Secrets.get();
   var cid = UI.input({ value: cur.clientId, placeholder: 'admin-client' });
-  var sec = UI.input({ type: 'password', placeholder: cur.clientSecret ? 'Saved — leave blank to keep (' + ctx.Secrets.mask(cur.clientSecret) + ')' : 'Client secret' });
+  var sec = UI.input({ type: 'password', placeholder: cur.clientSource === 'team' ? 'From the team file — nothing to fill' : cur.clientSecret ? 'Saved — leave blank to keep (' + ctx.Secrets.mask(cur.clientSecret) + ')' : 'Client secret' });
   sec.autocomplete = 'off';
   var eye = h('button', { type: 'button', title: 'Show', 'aria-label': 'Show secret' }, U.icon('eye', 18));
   eye.onclick = function () { sec.type = sec.type === 'password' ? 'text' : 'password'; };
   var hook = UI.input({ placeholder: 'https://chat.googleapis.com/v1/spaces/…/messages?key=…&token=…' });
   hook.autocomplete = 'off';
-  var hookNow = h('div.small.muted', cur.webhookUrl ? ['Saved: ', h('code', ctx.Secrets.maskUrl(cur.webhookUrl)), ' · ', auditBadge()] : 'Not set — audit messages will not be sent from this browser.');
+  function hookText() { return cur.webhookUrl ? [cur.webhookSource === 'team' ? 'From the team file: ' : 'Saved: ', h('code', ctx.Secrets.maskUrl(cur.webhookUrl)), ' · ', auditBadge()] : 'Not set — audit messages will not be sent from this browser.'; }
+  var hookNow = h('div.small.muted', hookText());
   var testOut = h('div.small');
   var err = h('div.err');
   var testState = null;
@@ -782,8 +820,10 @@ function secretsPanel(o) {
     U.swap(testOut, UI.chip(r.state === 'ok' ? 'Delivered' : r.state === 'unconfirmed' ? 'Sent — check Chat' : 'Failed', r.state === 'failed' ? 'bad' : 'ok'), ' ', r.msg);
   } });
   var clearHook = UI.btn('Remove webhook', { sm: true, kind: 'quiet', icon: 'trash', onClick: function () { ctx.Secrets.clear('webhook'); cur = ctx.Secrets.get(); refreshNow(); UI.toast('Audit webhook removed from this browser.'); } });
-  function refreshNow() { cur = ctx.Secrets.get(); U.swap(hookNow, cur.webhookUrl ? ['Saved: ', h('code', ctx.Secrets.maskUrl(cur.webhookUrl)), ' · ', auditBadge()] : 'Not set — audit messages will not be sent from this browser.'); clearHook.hidden = !cur.webhookUrl; }
-  clearHook.hidden = !cur.webhookUrl;
+  // .btn sets display, so the hidden attribute alone would not hide it
+  function showClear() { clearHook.style.display = cur.webhookSource === 'browser' ? '' : 'none'; }
+  function refreshNow() { cur = ctx.Secrets.get(); U.swap(hookNow, hookText()); showClear(); }
+  showClear();
 
   [cid, sec, hook].forEach(function (i) { i.addEventListener('input', function () { err.textContent = ''; }); });
   var save = h('button.btn.primary', { type: 'submit' }, h('span', o.first ? 'Save and continue' : 'Save'));
@@ -792,6 +832,7 @@ function secretsPanel(o) {
     o.inSettings ? null : h('h2', o.first ? 'Set up this browser' : 'Sign-in & audit setup'),
     o.inSettings ? null : h('p.muted', { style: { margin: '0 0 14px' } }, o.first ? 'One-time setup for ' + location.host + '. Ask your APIary admin for these values.' : 'Settings saved in this browser for ' + location.host + '.'),
     h('div.label', { style: { marginTop: 0 } }, 'Sign-in client'),
+    cur.clientSource === 'team' ? h('div.small.muted.teamclient', { style: { margin: '0 0 6px' } }, 'The team sign-in client (client.json) is used: ' + cur.clientId + '. Leave these fields empty unless the APIary admin gave you another one.') : null,
     h('div.grid2', UI.field('Client id', cid), UI.field('Client secret', h('div.pw', sec, eye))),
     h('div.label', 'Audit webhook (optional)'),
     UI.field('Google Chat webhook link', hook),
@@ -2231,6 +2272,27 @@ function decodeRequest(text) {
     return { name: String(o.n || '').slice(0, 60), user: o.u.trim().toLowerCase(), device: o.d, env: o.e || '', host: o.h || '', date: o.t || '' };
   } catch (e) { return null; }
 }
+/* v3.17: the team sign-in client (client.json). Built from this browser's own saved client (and, if ticked, its
+ * audit webhook). The admin commits it next to index.js; browsers without their own value use it. */
+function teamClientBox() {
+  var S_ = ctx.Secrets, own = S_.own(), t = S_.team();
+  var withHook = UI.check('Include this browser\'s audit webhook, so every colleague\'s sign-ins are reported to your Chat space', false);
+  withHook.classList.add('hookcheck');
+  if (!own.webhookUrl) { withHook.input.disabled = true; withHook.title = 'No audit webhook saved in this browser.'; }
+  return h('div', { style: { marginTop: '16px' } },
+    h('div.label', 'Sign-in client for the team'),
+    UI.note(t ? 'ok' : 'info', null, t ? 'In use from client.json: ' + t.clientId + (t.webhookUrl ? ', with an audit webhook.' : '.') + ' Colleagues are not asked for a client secret.'
+      : 'Not shared: every new browser is asked for the client id and secret.'),
+    UI.note('warn', null, 'client.json goes into the public repository, so anyone can read it. Share only Beeforce\'s own web-login client (the one its login page sends anyway). A shared webhook also lets anyone post into that Chat space.'),
+    h('div', { style: { margin: '8px 0' } }, withHook),
+    h('div.row', UI.btn('Download client.json', { icon: 'download', onClick: function () {
+      if (!own.clientId || !own.clientSecret) { UI.toast('Save the client id and secret in this browser first (Sign-in & audit).', 'bad'); return; }
+      var data = { version: 1, clientId: own.clientId, clientSecret: own.clientSecret };
+      if (withHook.input.checked && own.webhookUrl) data.webhookUrl = own.webhookUrl;
+      UI.saveText('client.json', JSON.stringify(data, null, 2) + '\n', 'application/json');
+      UI.toast('client.json downloaded. Commit it next to index.js. To stop sharing, delete it from the repository.');
+    } })));
+}
 function accessTab(el) {
   var L = ctx.Layout;
   var a = accessBase();
@@ -2265,14 +2327,15 @@ function accessTab(el) {
       if (!paste.value.trim()) { U.swap(reqOut); return; }
       if (!r) { U.swap(reqOut, h('div.err', 'Not a valid request code. Ask for it to be copied again.')); return; }
       var sel = roleSelect(st.devices[r.device] && st.devices[r.device].role);
+      var nm = UI.input({ value: r.name || (st.devices[r.device] && st.devices[r.device].name) || '', placeholder: 'Who is it?' }); nm.style.maxWidth = '200px'; nm.classList.add('reqname');
       var notAllowed = st.allowedUsers.length && st.allowedUsers.indexOf(r.user) < 0;
       U.swap(reqOut, h('div.card', { style: { margin: '8px 0' } },
         UI.kv({ Name: r.name || '—', Username: r.user, Browser: r.device, Environment: r.env || '—', Site: r.host || '—', Asked: r.date || '—' }),
         notAllowed ? UI.note('warn', null, r.user + ' is not in the allowed accounts. Approving adds it there too.') : null,
         st.devices[r.device] ? UI.note('info', null, 'This browser is already approved (' + (st.devices[r.device].name || st.devices[r.device].user) + '). Approving again updates it.') : null,
-        h('div.row', { style: { alignItems: 'center', marginTop: '8px' } }, h('span.small', 'Role'), sel,
+        h('div.row', { style: { alignItems: 'center', marginTop: '8px' } }, h('span.small', 'Name'), nm, h('span.small', 'Role'), sel,
           UI.btn('Approve', { kind: 'primary', icon: 'check', onClick: function () {
-            st.devices[r.device] = { name: r.name, user: r.user, role: sel.value, at: new Date().toISOString().slice(0, 10) };
+            st.devices[r.device] = { name: nm.value.trim().slice(0, 60), user: r.user, role: sel.value, at: new Date().toISOString().slice(0, 10) };
             if (st.allowedUsers.length && st.allowedUsers.indexOf(r.user) < 0) st.allowedUsers.push(r.user);
             save(); paste.value = ''; draw();
             UI.toast('Approved ' + (r.name || r.user) + '. Download layout.json and commit it to take effect.', 'ok');
@@ -2302,6 +2365,7 @@ function accessTab(el) {
           if (st.allowedUsers.length && st.allowedUsers.indexOf(u) < 0) st.allowedUsers.push(u);
           save(); draw();
         } }, 'Approve this browser for ' + (Api.state.user || 'my username'))]),
+      teamClientBox(),
       h('div.row', { style: { marginTop: '12px' } }, h('span', { style: { flex: 1 } }),
         UI.btn('Download layout.json', { kind: 'primary', icon: 'download', onClick: function () {
           save();

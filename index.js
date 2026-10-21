@@ -77,7 +77,7 @@
 
   var CORE = ['config', 'core/secrets', 'core/util', 'core/layout', 'core/styles', 'core/excel', 'core/api', 'core/endpoints', 'core/audit', 'core/ui', 'core/engine', 'core/shell'];
 
-  var ctx = { repoEndpoints: null, BASE: BASE, DEFAULT_MODULES: MODULES, DEFAULT_AREAS: AREAS, DEFAULT_TOOLS: TOOLS, AREAS: AREAS, TOOLS: TOOLS, modules: {}, repoLayout: null };
+  var ctx = { repoEndpoints: null, repoClient: null, BASE: BASE, DEFAULT_MODULES: MODULES, DEFAULT_AREAS: AREAS, DEFAULT_TOOLS: TOOLS, AREAS: AREAS, TOOLS: TOOLS, modules: {}, repoLayout: null };
   window.__BFT__ = ctx; // for debugging in the console
 
   function fetchCode(path) {
@@ -112,11 +112,12 @@
     return fetch(BASE + name + '?t=' + Date.now()).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
   }
 
-  // Fetch all core files (and the team layout) in parallel, run them in order.
-  Promise.all([fetchJson('layout.json'), fetchJson('endpoints.json')].concat(CORE.map(fetchCode))).then(function (all) {
+  // Fetch all core files (and the team layout, endpoints and sign-in client) in parallel, run them in order.
+  Promise.all([fetchJson('layout.json'), fetchJson('endpoints.json'), fetchJson('client.json')].concat(CORE.map(fetchCode))).then(function (all) {
     ctx.repoLayout = all[0];
     ctx.repoEndpoints = all[1];
-    var codes = all.slice(2);
+    ctx.repoClient = all[2];   // v3.17: optional team sign-in client (core/secrets.js)
+    var codes = all.slice(3);
     codes.forEach(function (code, i) { run(CORE[i], code); });
     ctx.Shell.start();
   }).catch(function (e) {

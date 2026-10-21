@@ -1,4 +1,4 @@
-# APIary (v3.16.0)
+# APIary (v3.18.0)
 
 APIary is a bookmark that opens a full-screen honeycomb toolkit on top of Beeforce (Production or UAT). Every write is shown
 for review first, then applied with pause / stop, retry for failed rows, and a downloadable Excel report.
@@ -32,7 +32,7 @@ Change these later from the sign-in card ("Sign-in & audit setup") or Admin Sett
 
 - Secrets are no longer in the code or the repository. They are kept in `localStorage` on the Beeforce site, in that browser.
 - That is **not** a vault. Any script running on the Beeforce page, browser extensions, and anyone using the same browser profile can read them. Don't set it up on shared computers.
-- Every user who signs in needs the client secret, so it is effectively shared with all tool users. If Beeforce's own login page sends the same client header (check the Network tab on the Beeforce login), it is already visible to every Beeforce user.
+- Every user who signs in needs the client secret, so it is effectively shared with all tool users. Beeforce's own login page sends the same client header (`web-client`, checked on UAT in October 2026), so it is already visible to every Beeforce user; v3.17 can share it through `client.json` (see below).
 - Audit is per browser and cannot be enforced by a client-side tool. Treat Google Chat audit as a convenience log, not a control.
 - The old secrets were published in a gist and shared in chat: **rotate the client secret with Beeforce and create a new Chat webhook** before production use.
 
@@ -231,13 +231,44 @@ step back and forward.
   already readable ("End Date is required") are shown as they are.
 - **Light theme by default** for browsers that have not picked one. A saved choice (System, Light or Dark) is kept.
 
+## Team sign-in client (v3.17)
+
+Beeforce's own login page sends one fixed sign-in client (`web-client`) for every user, so its secret protects
+nothing that the Beeforce password doesn't. You decided to share it with the team instead of typing it in every
+browser:
+
+1. In a browser where the client id and secret are saved, unlock admin tools → Admin Settings → **Access** →
+   "Sign-in client for the team" → **Download client.json**. Tick the box to include this browser's audit webhook
+   if every colleague's sign-ins should be reported to your Chat space.
+2. Commit `client.json` next to `index.js`.
+3. From then on, a browser with no client of its own goes straight to the sign-in card. A value saved in a browser
+   still wins. To stop sharing, delete `client.json` from the repository.
+
+**`client.json` is public** (the repository is public). Share only Beeforce's own web-login client, never a client
+made for APIary alone. A shared webhook also lets anyone who reads the repository post into that Chat space.
+
+## First sign-in for a colleague (v3.18)
+
+1. They sign in to Beeforce as usual (the browser offers to save the password — say yes once).
+2. They click the bookmark. The sign-in card opens on the environment of that site (UAT site → UAT), with the
+   username and password filled from the browser's saved password.
+3. First time on that browser the button says **Request access**. One click: APIary checks the password with
+   Beeforce (and drops that session), copies a request code to their clipboard and, when the audit webhook is shared
+   in `client.json`, posts the request to your Google Chat. A wrong password sends nothing.
+4. You paste the code in Admin Settings → Access → **Approve a request** (name and role), download `layout.json` and
+   commit it.
+5. Next time they click the bookmark, the button says **Sign in** as usual.
+
+Not yet: getting access inside the same session without opening the bookmark again (planned).
+
 ## Share APIary with a colleague
 
-1. Send them the bookmark line (Set up, step 2, with your repository) and the sign-in client id and secret, through
-   a password manager.
+1. Send them the bookmark line (Set up, step 2, with your repository). With `client.json` committed (v3.17) that is
+   all; otherwise also send the sign-in client id and secret, through a password manager.
 2. They make a bookmark: show the bookmarks bar (Ctrl+Shift+B), right-click it → **Add page** (Edge: **Add
    favorite**). Name: **`⬢ APIary`**. URL: paste the whole line. (Pasting it in the address bar does not work.)
-3. They open Beeforce, click the bookmark, enter the client id and secret once, and sign in.
+3. They open Beeforce, click the bookmark (and, without `client.json`, enter the client id and secret once), and
+   sign in.
 4. If browser approval is on, they send you the request code; approve it and commit `layout.json`.
 
 ## Admin console (Settings)
